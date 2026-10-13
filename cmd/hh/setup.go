@@ -1,5 +1,9 @@
 package main
 
-import "errors"
+import (
+	"os"
 
-func setupCmd([]string) error { return errors.New("not implemented yet") }
+	"github.com/eduardosasso/hh/internal/setup"
+)
+
+func setupCmd([]string) error { return setup.Run(os.Stdout) }

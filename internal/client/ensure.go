@@ -10,11 +10,11 @@ import (
 
 	"github.com/eduardosasso/hh/internal/home"
 	"github.com/eduardosasso/hh/internal/service"
+	"github.com/eduardosasso/hh/internal/wait"
 )
 
 const (
 	startWait = 10 * time.Second
-	poll      = 100 * time.Millisecond
 )
 
 // Ensure returns a client to a running daemon, starting one if needed.
@@ -39,17 +39,19 @@ func Ensure() (*Client, error) {
 
 // Wait polls until the daemon answers or d passes.
 func (c *Client) Wait(d time.Duration) error {
-	deadline := time.Now().Add(d)
-	for {
+	err := wait.Until(d, func() (bool, error) {
 		_, err := c.Health()
-		if err == nil || !errors.Is(err, ErrDown) {
-			return err
+		if errors.Is(err, ErrDown) {
+			return false, nil
 		}
-		if time.Now().After(deadline) {
-			return errors.New("daemon did not start; see `hh logs`")
-		}
-		time.Sleep(poll)
+
+		return err == nil, err
+	})
+	if errors.Is(err, wait.ErrTimeout) {
+		return errors.New("daemon did not start; see `hh logs`")
 	}
+
+	return err
 }
 
 // start prefers the login service and falls back to a detached `hh daemon`.
