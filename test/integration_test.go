@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ const (
 	deadline = 20 * time.Second
 	retry    = 200 * time.Millisecond
 	page     = "hello from hh"
+	sweep    = 7 * time.Second
 )
 
 func free(t *testing.T) int {
@@ -100,7 +102,11 @@ func TestProxy(t *testing.T) {
 	if err := app.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { stop(t, app) })
+	t.Cleanup(func() {
+		if app.ProcessState == nil {
+			stop(t, app)
+		}
+	})
 
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil {
@@ -122,6 +128,45 @@ func TestProxy(t *testing.T) {
 	body := fetch(t, c, fmt.Sprintf("https://other.localhost:%d/", https), http.StatusServiceUnavailable)
 	if !strings.Contains(body, "site.localhost") {
 		t.Fatalf("503 page does not list live routes: %q", body)
+	}
+
+	ls := func() string {
+		cmd := exec.Command(bin, "ls")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hh ls: %v\n%s", err, out)
+		}
+
+		return string(out)
+	}
+	if out := ls(); !strings.Contains(out, "site.localhost") {
+		t.Fatalf("hh ls: %s", out)
+	}
+	// A wrapper killed with SIGKILL cannot deregister; the sweep must drop it.
+	// Its python child survives, so stop that one by pid.
+	child, err := exec.Command("pgrep", "-P", strconv.Itoa(app.Process.Pid)).Output()
+	if err != nil {
+		t.Fatalf("find python child: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := exec.Command("kill", strings.Fields(string(child))...).Run(); err != nil {
+			t.Logf("kill python: %v", err)
+		}
+	})
+	if err := app.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	// Reap it as a shell would; a zombie still answers kill(pid, 0).
+	if err := app.Wait(); err == nil {
+		t.Fatal("wrapper exited cleanly after SIGKILL")
+	}
+	end := time.Now().Add(sweep)
+	for strings.Contains(ls(), "site.localhost") {
+		if time.Now().After(end) {
+			t.Fatalf("route still listed %s after SIGKILL", sweep)
+		}
+		time.Sleep(retry)
 	}
 }
 
