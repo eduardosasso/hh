@@ -15,6 +15,7 @@ Usage:
   hh url [--json]                print the URL for this folder
   hh ls                          list live routes
   hh open                        open the URL in the browser
+  hh init                        bake the hh prefix into this project's dev script
   hh setup                       one-time machine setup
   hh daemon                      run the proxy in the foreground
   hh logs                        tail daemon logs
@@ -37,6 +38,7 @@ var commands = map[string]func([]string) error{
 	"url":    urlCmd,
 	"ls":     lsCmd,
 	"open":   openCmd,
+	"init":   initCmd,
 	"setup":  setupCmd,
 	"daemon": daemonCmd,
 	"logs":   logsCmd,

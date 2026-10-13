@@ -130,7 +130,12 @@ func lookup(cmd string) (string, error) {
 		return "", &exitError{code: notExecutable, err: fmt.Errorf("permission denied: %s", cmd)}
 	}
 
-	return "", &exitError{code: notFound, err: fmt.Errorf("command not found: %s", cmd)}
+	msg := "command not found: " + cmd
+	if !strings.Contains(cmd, "/") {
+		msg += " (not an hh subcommand either; see hh help)"
+	}
+
+	return "", &exitError{code: notFound, err: errors.New(msg)}
 }
 
 // claim picks a port and registers the route.
