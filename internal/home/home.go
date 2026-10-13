@@ -9,13 +9,17 @@ import (
 )
 
 const (
-	dirName      = ".hh"
-	socketName   = "hh.sock"
-	stateName    = "routes.json"
-	logName      = "daemon.log"
-	storageName  = "caddy"
-	defaultHTTPS = 443
-	defaultHTTP  = 80
+	dirName     = ".hh"
+	socketName  = "hh.sock"
+	stateName   = "routes.json"
+	logName     = "daemon.log"
+	storageName = "caddy"
+	defaultHTTP = 80
+	dirMode     = 0o700
+	logMode     = 0o600
+
+	// DefaultHTTPS is the port that URLs leave out.
+	DefaultHTTPS = 443
 
 	// HTTPSEnv and HTTPEnv override the proxy listen ports, mainly for tests.
 	HTTPSEnv = "HH_HTTPS_PORT"
@@ -64,7 +68,7 @@ func RootCert() (string, error) {
 }
 
 // HTTPS is the port the proxy serves TLS on.
-func HTTPS() (int, error) { return listen(HTTPSEnv, defaultHTTPS) }
+func HTTPS() (int, error) { return listen(HTTPSEnv, DefaultHTTPS) }
 
 // HTTP is the port the proxy redirects from.
 func HTTP() (int, error) { return listen(HTTPEnv, defaultHTTP) }
@@ -82,15 +86,51 @@ func listen(key string, fallback int) (int, error) {
 	return p, nil
 }
 
-// URL is the public address of host, with the port only when it is not 443.
+// URL is the public address of host on the configured HTTPS port.
 func URL(host string) (string, error) {
 	p, err := HTTPS()
 	if err != nil {
 		return "", err
 	}
-	if p == defaultHTTPS {
-		return "https://" + host, nil
+
+	return Address(host, p), nil
+}
+
+// Address is https://host, with the port only when it is not 443.
+func Address(host string, https int) string {
+	if https == DefaultHTTPS {
+		return "https://" + host
 	}
 
-	return fmt.Sprintf("https://%s:%d", host, p), nil
+	return fmt.Sprintf("https://%s:%d", host, https)
+}
+
+// Mkdir creates ~/.hh.
+func Mkdir() error {
+	d, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(d, dirMode); err != nil {
+		return fmt.Errorf("create %s: %w", d, err)
+	}
+
+	return nil
+}
+
+// OpenLog opens the daemon log for appending, creating ~/.hh if needed.
+func OpenLog() (*os.File, error) {
+	if err := Mkdir(); err != nil {
+		return nil, err
+	}
+	p, err := Log()
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, logMode)
+	if err != nil {
+		return nil, fmt.Errorf("open log: %w", err)
+	}
+
+	return f, nil
 }
