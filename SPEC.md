@@ -1,0 +1,223 @@
+# hh — HTTPS here
+
+One binary. Prefix any dev command. Get a stable `https://<name>.localhost` URL.
+
+```
+hh bun run dev
+→ https://quip.localhost
+```
+
+## Problem
+
+Every local app lands on `localhost:3000`, `3001`, `3002`. Ports collide. HTTPS needs
+a hand-written proxy config per project. Agents guess ports and get lost. Worktrees of
+the same repo share one hostname and one port.
+
+## Goals
+
+- Zero config per project. The folder name is the hostname.
+- Real HTTPS with no browser warning.
+- Any stack. If it listens on a port, it works.
+- Every worktree gets its own URL.
+- Agents learn one rule: prefix with `hh`, read the URL.
+
+## Non-goals (v1)
+
+- Raw TCP services such as Postgres.
+- Sharing a URL outside the machine.
+- Windows. See "Platforms".
+
+## Install
+
+```bash
+brew install hh
+hh setup
+```
+
+`hh setup` runs once per machine:
+
+1. Trusts the internal root certificate in the OS trust store. One sudo prompt.
+2. On Linux, runs `setcap cap_net_bind_service` on the binary. Same prompt.
+3. Installs the daemon as a login service: launchd on macOS, systemd user unit on Linux.
+4. Asks to add the agent rule to `~/.claude/CLAUDE.md` and `~/AGENTS.md`. See "Agents".
+5. Asks to install the Claude Code hook. See "Agents".
+
+Steps 4 and 5 are opt-in prompts. Everything else is silent.
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `hh <cmd...>` | Run `cmd` on a managed port. Print the URL. Route until exit. |
+| `hh <label> -- <cmd...>` | Same, as `<label>.<host>`. |
+| `hh url` | Print the URL for the current folder. Starts nothing. |
+| `hh url --json` | Same, as `{ "url", "host", "port" }`. |
+| `hh ls` | List live routes: host, port, pid, uptime, folder. |
+| `hh open` | Open the URL in the browser. |
+| `hh init` | Bake the prefix into the project's dev script. See "Agents". |
+| `hh setup` | Machine setup. See "Install". |
+| `hh daemon` | Run the proxy in the foreground. Used by the service. |
+| `hh logs` | Tail daemon logs. |
+
+Flags on `hh <cmd>`:
+
+| Flag | Does |
+|---|---|
+| `--name <n>` | Override the derived name. |
+| `--port <p>` | Use a fixed port instead of an allocated one. |
+| `--route <path>=<port>` | Send `path` to another local port. Repeatable. Covers split Vite HMR setups. |
+
+## Naming
+
+The host is derived. Nothing is configured. One folder, one URL.
+
+1. `base` = basename of the git root. No git: basename of cwd.
+2. Slugify: lowercase, every run of characters outside `[a-z0-9]` becomes `-`, trim `-`.
+3. Main checkout: `host = <base>.localhost`. The branch does not matter. Switching
+   branches never changes the URL.
+4. Worktree: `base` comes from the main repo folder, the parent of
+   `git rev-parse --git-common-dir`. The subdomain is the branch, slugified, `/` to `-`.
+   `host = <branch>.<base>.localhost`. A worktree is detected when `--git-dir` and
+   `--git-common-dir` differ.
+5. A label prepends: `<label>.<host>`.
+
+Examples:
+
+| Folder | Branch | Host |
+|---|---|---|
+| `~/code/quip` | main | `quip.localhost` |
+| `~/code/quip` | `feat/auth` | `quip.localhost` |
+| `~/code/overdew-wt-173` (worktree of `overdew`) | `fix/recap-unread` | `fix-recap-unread.overdew.localhost` |
+| `hh api -- bun run api` in `quip` | main | `api.quip.localhost` |
+
+Every host also registers `*.<host>`, so tenant subdomains like
+`acme.quip.localhost` reach the same app with no flag. Caddy matches the most
+specific host, so `wt-173.overdew.localhost` wins over `*.overdew.localhost`.
+
+Collision: two different folders that derive the same host. The second one fails
+with the first one's folder in the message and a hint to use `--name`.
+
+## Runtime
+
+When `hh <cmd>` runs:
+
+1. Derive the host.
+2. Pick the port. Hash the host into `40000–49999`. If busy, take the next free port.
+   Same host, same port, run after run. Agents and `.env` files can depend on it.
+3. Ensure the daemon is up. If not, start it. No sudo.
+4. Register `{ host, port, pid, cwd, routes }` with the daemon over a unix socket.
+5. Print one line to stdout: `→ https://<host>`. Then exec `cmd` with inherited stdio.
+6. On exit or signal, deregister. The exit code is the child's.
+
+Environment passed to the child:
+
+| Var | Value |
+|---|---|
+| `PORT` | the allocated port |
+| `HH_URL` | `https://<host>` |
+| `HH_HOST` | `<host>` |
+| `HH_PORT` | same as `PORT` |
+
+`$PORT` in the command line is expanded by `hh` before exec, so it works in every shell.
+
+### Profiles
+
+Tools that ignore `PORT` get the flag added for them. `hh` matches the first word of
+the command.
+
+| First word | Added |
+|---|---|
+| `vite` | `--port $PORT --strictPort` |
+| `wrangler` | `--port $PORT` |
+| `uvicorn` | `--port $PORT` |
+| `php` (`-S`) | `localhost:$PORT` |
+| `python -m http.server` | `$PORT` |
+
+Rails, Next, Bun, Deno, Go, Django, Flask, Phoenix read `PORT` or take `$PORT`.
+No profile needed. A user-supplied port flag always wins over the profile.
+
+### Daemon
+
+- Embedded Caddy, in process. The binary is the proxy.
+- Listens on `:443` and `:80`. `:80` redirects to `https`.
+- Control socket: `~/.hh/hh.sock`. State file: `~/.hh/routes.json`.
+- Every route carries the wrapper's pid. A sweep every 5 s removes routes whose pid is gone.
+  A crashed wrapper never leaves a stale route.
+- Each route proxies to `127.0.0.1:<port>` with `X-Forwarded-*` headers and the
+  original `Host`. WebSockets pass through.
+- An unknown host returns a 503 page that lists the live routes.
+
+### HTTPS
+
+- Caddy's internal CA. Root lives in `~/.hh/pki`.
+- Leaf certs are issued per host on first request, in memory, no files to manage.
+- `hh setup` trusts the root. After that, every new host is green with no prompt.
+
+### DNS
+
+`.localhost` only. macOS and systemd-resolved Linux resolve `*.localhost` to loopback
+with no setup. Nested names like `a.b.c.localhost` work. No DNS server, no resolver file.
+
+## Platforms
+
+| OS | DNS | Port 443 | Service |
+|---|---|---|---|
+| macOS | native | user can bind | launchd |
+| Linux + systemd-resolved | native | `setcap` once | systemd user unit |
+| Linux without systemd-resolved | hosts file per name, admin prompt | `setcap` once | systemd user unit |
+| Windows | later: built-in DNS server | user can bind | later |
+
+## Agents
+
+Three layers. Each one works alone.
+
+1. **Global rule.** `hh setup` offers to append one line to `~/.claude/CLAUDE.md` and
+   `~/AGENTS.md`: *"Start every dev server with the `hh` prefix. Use the URL it
+   prints, never `localhost:<port>`."*
+2. **Hook.** `hh setup` offers a `PreToolUse` hook for Bash in `~/.claude/settings.json`.
+   It matches known dev-server commands with no `hh` prefix and blocks with:
+   *"Run this through `hh`."* The agent retries correctly.
+3. **Project.** `hh init` rewrites the `dev` script in `package.json`, `Procfile`, or
+   `Makefile` to start with `hh`, and adds the same one line to the project's `AGENTS.md`.
+   Then `bun run dev` already does the right thing on any machine.
+
+`hh url --json` gives an agent the address before anything starts.
+
+## Failure modes
+
+| Case | Behavior |
+|---|---|
+| Daemon not running | Started on demand. |
+| Root cert not trusted | URL still prints. One warning line: run `hh setup`. |
+| Host collision from another folder | Exit 1, show the other folder, suggest `--name`. |
+| Same folder, second `hh` run | Exit 1, show the running pid. |
+| Allocated port busy | Next free port. Stable port is a preference, not a promise. |
+| Child exits | Route removed within 5 s even on SIGKILL. |
+| Command not found | Same error and exit code the shell gives. |
+
+## Tech
+
+- Go. Single static binary. Caddy imported as a library.
+- Release with goreleaser: Homebrew tap, curl install script, GitHub releases.
+- Tests: unit tests for naming and port hashing. Integration test that starts the daemon,
+  runs `hh python -m http.server`, and fetches the URL with a trusted client.
+- No config file format. Flags and env only.
+
+## Acceptance
+
+- [ ] Fresh Mac: `brew install hh && hh setup`, one sudo prompt, done.
+- [ ] `hh bun run dev` in `quip` prints `→ https://quip.localhost` and the page loads green in Safari, Chrome, and `curl`.
+- [ ] Same command in a worktree on branch `wt-173` prints `→ https://wt-173.overdew.localhost`. Both run at the same time.
+- [ ] `git switch feat/auth` in the main checkout. `hh url` still prints `https://quip.localhost`.
+- [ ] `acme.quip.localhost` reaches the `quip` app with no flag.
+- [ ] `hh vite` works with HMR through the proxy.
+- [ ] Kill the wrapper with `kill -9`. `hh ls` is clean within 5 s.
+- [ ] `hh url --json` works with no daemon and no app running.
+- [ ] Rails, Go, Node, Deno, Bun, Python examples from the README all work unchanged.
+- [ ] Linux: same flow with one `setcap` prompt.
+
+## Later
+
+- Windows with a built-in DNS responder.
+- `hh share` to expose a URL through a tunnel.
+- TCP routes through Caddy's layer4 module.
