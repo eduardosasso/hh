@@ -433,7 +433,7 @@ func TestEnvPort(t *testing.T) {
 	site := pages(t, h, "pinned-server")
 	env = append(env, fmt.Sprintf("PORT=%d", pinned))
 
-	_, lines := launch(t, bin, env, site, "--name", "pinned", "sh", "-c", `exec python3 -m http.server "$PORT"`)
+	_, lines := launch(t, bin, env, site, "--name", "pinned", "python3", "-m", "http.server", "$PORT")
 	expect(t, lines, "→ https://pinned.localhost")
 	got := fetch(t, trusted(t, h), fmt.Sprintf("https://pinned.localhost:%d/", https), http.StatusOK)
 	if !strings.Contains(got, "pinned-server") {

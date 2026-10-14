@@ -38,3 +38,18 @@ func TestExpand(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestExpandThenApply(t *testing.T) {
+	cases := []struct {
+		in, want []string
+	}{
+		{[]string{"python3", "-m", "http.server", "$PORT"}, []string{"python3", "-m", "http.server", "38400"}},
+		{[]string{"php", "-S", "localhost:$PORT"}, []string{"php", "-S", "localhost:38400"}},
+	}
+	for _, c := range cases {
+		got := Apply(Expand(c.in, 38400), 38400)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%v: got %v, want %v", c.in, got, c.want)
+		}
+	}
+}

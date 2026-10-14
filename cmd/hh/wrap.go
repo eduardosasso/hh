@@ -219,7 +219,7 @@ func env(r route.Route, u string) []string {
 // spawn runs the command with inherited stdio and forwards signals to it.
 // watch runs beside the child and has returned by the time spawn does.
 func spawn(bin string, args []string, port int, environ []string, watch func(pid int, done <-chan struct{})) (int, error) {
-	args = profile.Expand(profile.Apply(args, port), port)
+	args = profile.Apply(profile.Expand(args, port), port)
 	cmd := exec.Command(bin, args[1:]...)
 	cmd.Args[0] = args[0]
 	cmd.Env = environ
