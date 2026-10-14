@@ -44,6 +44,8 @@ certificate warning.
 | `hh daemon` | Run the proxy in the foreground. |
 
 Flags, before the command: `--name <n>`, `--port <p>`, `--route <path>=<port>` (repeatable).
+A `PORT` already set in the environment counts as `--port`, so a harness that picks the
+port gets it.
 
 The child gets `PORT`, `HH_PORT`, `HH_URL`, and `HH_HOST`. `hh` expands `$PORT` in the
 command itself, so quote it (`'$PORT'`) and it works in every shell.

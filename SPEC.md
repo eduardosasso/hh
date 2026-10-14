@@ -64,7 +64,7 @@ Flags on `hh <cmd>`:
 | Flag | Does |
 |---|---|
 | `--name <n>` | Override the derived name. |
-| `--port <p>` | Use a fixed port instead of an allocated one. |
+| `--port <p>` | Use a fixed port instead of an allocated one. Without it, an inherited `PORT` does the same. |
 | `--route <path>=<port>` | Send `path` to another local port. Repeatable. Covers split Vite HMR setups. |
 
 ## Naming
@@ -102,8 +102,10 @@ with the first one's folder in the message and a hint to use `--name`.
 When `hh <cmd>` runs:
 
 1. Derive the host.
-2. Pick the port. Hash the host into `40000–49999`. If busy, take the next free port.
-   Same host, same port, run after run. Agents and `.env` files can depend on it.
+2. Pick the port. `--port` wins. Else a `PORT` already set in the environment counts as
+   `--port`: the caller picked it on purpose. A `PORT` that is not an integer in
+   `1–65535` is an error. Else hash the host into `40000–49999`. If busy, take the next
+   free port. Same host, same port, run after run. Agents and `.env` files can depend on it.
 3. Ensure the daemon is up. If not, start it. No sudo.
 4. Register `{ host, port, pid, cwd, routes }` with the daemon over a unix socket.
 5. Print one line to stdout: `→ https://<host>`. Then exec `cmd` with inherited stdio.
@@ -146,14 +148,20 @@ Many dev scripts ignore `PORT` and bind a fixed port such as `8787` or `3000`.
   (`ps -A -o pid=,ppid=,comm=`) and the TCP sockets those pids listen on, on loopback
   or all interfaces. macOS: `lsof -nP -iTCP -sTCP:LISTEN -a -p <pids> -F pn`.
   Linux: `/proc/net/tcp` and `/proc/net/tcp6`, inodes mapped to pids through
-  `/proc/<pid>/fd`. Polling for a port stops at the first hit.
-- `PORT` itself wins if the app listens on it. `--route` ports are skipped. Else the
-  lowest port wins.
-- Same as `PORT`: nothing to say.
+  `/proc/<pid>/fd`. After the first hit, polling goes on every second until the child
+  exits, so a port that opens later still counts.
+- At each poll, among listening ports that are not `--route` ports: `PORT` wins, then
+  the host's usual port, then the port already chosen, then the first port seen (lowest
+  first within one poll). A port that closes stops counting; the next one in that order
+  takes over. A poll with nothing listening keeps the route as it is.
+- Same as `PORT` from the start: nothing to say.
 - Different: the wrapper registers the route again with the same pid and the new port.
   The daemon replaces the route, keeps its start time, and reloads Caddy. One more line
-  goes to stdout after the first: `→ https://<host> (app listens on 8787, ignoring PORT=47433)`.
-- The wrapper records the found port as the host's usual port in `~/.hh/ports.json`.
+  goes to stdout: `→ https://<host> (app listens on 8787, ignoring PORT=47433)`.
+- When `PORT` opens after another port took the route, the route moves to `PORT` and
+  stdout gets `→ https://<host> (app now listens on PORT=47433)`. Dev scripts that start
+  helpers (Stripe CLI, workerd) before the app need this.
+- The wrapper records the chosen port as the host's usual port in `~/.hh/ports.json`.
   When the app listens on `PORT` again, the entry is dropped. The daemon never reads it.
 
 Before the next start, if the usual port is busy, `hh` says who holds it on stderr and
@@ -171,7 +179,7 @@ With no usual port known, it prints a hint to run `hh who`.
 
 After the child exits, `hh` sends SIGTERM to the processes it last saw in the child's
 tree that still run the same command, waits up to 2 s, then sends SIGKILL. It never
-signals other pids. The tree refreshes every 250 ms until the port is found, then every
+signals other pids. The tree refreshes every 250 ms until a port is found, then every
 second. When it stops something, it prints one line:
 `hh: stopped 2 leftover processes (stripe, wrangler)`.
 
