@@ -70,7 +70,8 @@ func (c *Client) Routes() ([]route.Route, error) {
 	return rs, c.do(http.MethodGet, "/routes", nil, &rs)
 }
 
-// Register adds r. A taken host returns *ConflictError.
+// Register adds r, or moves it when the same pid registers the host again.
+// A host owned by another live pid returns *ConflictError.
 func (c *Client) Register(r route.Route) error {
 	return c.do(http.MethodPost, "/routes", r, nil)
 }

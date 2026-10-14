@@ -253,21 +253,31 @@ func (d *daemon) register(w http.ResponseWriter, req *http.Request) {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if cur, ok := d.routes[r.Host]; ok && cur.PID != r.PID && alive(cur.PID) {
+	cur, ok := d.routes[r.Host]
+	if ok && cur.PID != r.PID && alive(cur.PID) {
 		d.log.Info("route refused", "host", r.Host, "pid", r.PID, "owner", cur.PID)
 		d.reply(w, http.StatusConflict, conflict(cur, r))
 
 		return
 	}
+	// The same wrapper registers again to move its route to the port the app listens on.
+	update := ok && cur.PID == r.PID
 	prev := maps.Clone(d.routes)
 	r.Started = time.Now()
+	if update {
+		r.Started = cur.Started
+	}
 	d.routes[r.Host] = r
 	if err := d.commit(prev); err != nil {
 		d.fail(w, http.StatusInternalServerError, err)
 
 		return
 	}
-	d.log.Info("route added", "host", r.Host, "port", r.Port, "pid", r.PID, "cwd", r.Cwd)
+	msg := "route added"
+	if update {
+		msg = "route updated"
+	}
+	d.log.Info(msg, "host", r.Host, "port", r.Port, "pid", r.PID, "cwd", r.Cwd)
 	d.reply(w, http.StatusOK, r)
 }
 
