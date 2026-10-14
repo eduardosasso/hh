@@ -25,7 +25,7 @@ const Rule = "Start every dev server with the `hh` prefix. Use the URL it prints
 
 const timeout = 10 * time.Second
 
-// Run does the one-time setup and prints the agent rule to out.
+// Run does the one-time setup and reports to out.
 func Run(out io.Writer) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -68,7 +68,7 @@ func Run(out io.Writer) error {
 			return err
 		}
 	}
-	fmt.Fprintf(out, "hh is ready. Add this line to your agent instructions (CLAUDE.md, AGENTS.md):\n\n%s\n", Rule)
+	fmt.Fprintln(out, "hh is ready.")
 
 	return nil
 }

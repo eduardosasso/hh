@@ -21,7 +21,11 @@ hh setup
 1. On Linux, lets the binary bind ports 80 and 443 (`setcap`).
 2. Installs the proxy daemon as a login service (launchd on macOS, systemd user unit on Linux).
 3. Trusts the local root certificate in the OS trust store.
-4. Prints one line to add to your agent instructions (`CLAUDE.md`, `AGENTS.md`).
+4. Offers to add one line to `~/AGENTS.md` so every agent starts dev servers with `hh`.
+   Use `--agents` to say yes without a prompt, or `--no-agents` to skip it.
+
+`hh init` does the same for one project: it adds the line to the project's `AGENTS.md`.
+`hh` never writes to vendor folders such as `~/.claude`.
 
 You can skip setup. `hh` starts the daemon on demand, and the URL still works with a
 certificate warning.

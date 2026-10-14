@@ -16,7 +16,7 @@ Usage:
   hh ls                          list live routes
   hh open                        open the URL in the browser
   hh init                        bake the hh prefix into this project's dev script
-  hh setup                       one-time machine setup
+  hh setup [--agents|--no-agents] one-time machine setup; --agents adds the rule to ~/AGENTS.md, --no-agents skips it
   hh daemon                      run the proxy in the foreground
   hh logs                        tail daemon logs
 
