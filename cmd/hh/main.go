@@ -14,6 +14,7 @@ Usage:
   hh [flags] <label> -- <cmd...> same, as <label>.<host>
   hh url [--json]                print the URL for this folder
   hh ls                          list live routes
+  hh who [port]                  show which process listens on each port
   hh open                        open the URL in the browser
   hh init                        bake the hh prefix into this project's dev script
   hh setup [--agents|--no-agents] one-time machine setup; --agents adds the rule to ~/AGENTS.md, --no-agents skips it
@@ -37,6 +38,7 @@ func (e *exitError) Error() string { return e.err.Error() }
 var commands = map[string]func([]string) error{
 	"url":    urlCmd,
 	"ls":     lsCmd,
+	"who":    whoCmd,
 	"open":   openCmd,
 	"init":   initCmd,
 	"setup":  setupCmd,

@@ -47,6 +47,21 @@ func TestDescendants(t *testing.T) {
 	if slices.Contains(pids, os.Getpid()) {
 		t.Fatal("root listed as its own descendant")
 	}
+	tree, err := Tree(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sleep := Process{PID: cmd.Process.Pid, Command: "sleep"}
+	if !slices.Contains(tree, sleep) {
+		t.Fatalf("sleep not in tree %+v", tree)
+	}
+	run, err := Running([]Process{sleep, {PID: cmd.Process.Pid, Command: "other"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(run, []Process{sleep}) {
+		t.Fatalf("running %+v", run)
+	}
 }
 
 func TestCwd(t *testing.T) {

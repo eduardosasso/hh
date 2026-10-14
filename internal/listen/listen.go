@@ -64,6 +64,12 @@ func All() ([]Socket, error) {
 // Cwd is the working directory of pid.
 func Cwd(pid int) (string, error) { return cwd(pid) }
 
+// Process is a running process and its command name.
+type Process struct {
+	PID     int
+	Command string
+}
+
 // Descendants returns every process below pid, not pid itself.
 func Descendants(pid int) ([]int, error) {
 	ps, err := procs()
@@ -72,6 +78,43 @@ func Descendants(pid int) ([]int, error) {
 	}
 
 	return descendants(ps, pid), nil
+}
+
+// Tree is Descendants with each command name, so a later check can tell a
+// reused pid from the original process.
+func Tree(pid int) ([]Process, error) {
+	ps, err := procs()
+	if err != nil {
+		return nil, err
+	}
+
+	return named(ps, descendants(ps, pid)), nil
+}
+
+// Running returns the processes in want that still run the same command.
+func Running(want []Process) ([]Process, error) {
+	if len(want) == 0 {
+		return nil, nil
+	}
+	ps, err := procs()
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(slices.Clone(want), func(p Process) bool {
+		cur, ok := ps[p.PID]
+
+		return !ok || cur.comm != p.Command
+	}), nil
+}
+
+func named(ps map[int]proc, pids []int) []Process {
+	out := make([]Process, len(pids))
+	for i, pid := range pids {
+		out[i] = Process{PID: pid, Command: ps[pid].comm}
+	}
+
+	return out
 }
 
 func descendants(ps map[int]proc, root int) []int {

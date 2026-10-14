@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/eduardosasso/hh/internal/client"
 	"github.com/eduardosasso/hh/internal/home"
@@ -108,8 +109,15 @@ func wrap(args []string) error {
 	}
 	fmt.Println("→ " + u)
 	warnTrust()
+	warnUsual(c, r)
 
-	code, err := spawn(bin, o.cmd, r.Port, env(r, u))
+	w := &watcher{c: c, r: r, url: u}
+	start := time.Now()
+	code, err := spawn(bin, o.cmd, r.Port, env(r, u), w.watch)
+	reap(w.family)
+	if err == nil && code != 0 && code <= signalBase && w.found == 0 && time.Since(start) < earlyExit {
+		failed(c, r)
+	}
 	if rerr := release(c, r); rerr != nil {
 		fmt.Fprintln(os.Stderr, "hh:", rerr)
 	}
@@ -187,7 +195,8 @@ func env(r route.Route, u string) []string {
 }
 
 // spawn runs the command with inherited stdio and forwards signals to it.
-func spawn(bin string, args []string, port int, environ []string) (int, error) {
+// watch runs beside the child and has returned by the time spawn does.
+func spawn(bin string, args []string, port int, environ []string, watch func(pid int, done <-chan struct{})) (int, error) {
 	args = profile.Expand(profile.Apply(args, port), port)
 	cmd := exec.Command(bin, args[1:]...)
 	cmd.Args[0] = args[0]
@@ -201,8 +210,16 @@ func spawn(bin string, args []string, port int, environ []string) (int, error) {
 		return 1, fmt.Errorf("start %s: %w", args[0], err)
 	}
 	done := make(chan struct{})
-	defer close(done)
+	watched := make(chan struct{})
+	defer func() {
+		close(done)
+		<-watched
+	}()
 	go forward(cmd.Process, sigs, done)
+	go func() {
+		defer close(watched)
+		watch(cmd.Process.Pid, done)
+	}()
 
 	err := cmd.Wait()
 	var exit *exec.ExitError
