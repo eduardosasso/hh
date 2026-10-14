@@ -38,6 +38,7 @@ certificate warning.
 | `hh <label> -- <cmd...>` | Same, as `<label>.<host>`. |
 | `hh url [--json]` | Print the URL for this folder. Starts nothing. |
 | `hh ls` | List live routes. |
+| `hh who [port]` | Show which process listens on each port, and its hh host. |
 | `hh open` | Open the URL in the browser. |
 | `hh logs` | Tail the daemon log. |
 | `hh daemon` | Run the proxy in the foreground. |
@@ -54,6 +55,11 @@ command itself, so quote it (`'$PORT'`) and it works in every shell.
 | `~/code/quip` | any | `https://quip.localhost` |
 | `~/code/overdew-wt-173`, worktree of `overdew` | `fix/recap-unread` | `https://fix-recap-unread.overdew.localhost` |
 | `hh api -- bun run api` in `quip` | any | `https://api.quip.localhost` |
+
+If the app ignores `PORT` and listens on a fixed port, `hh` finds that port and routes to
+it. It prints `→ https://quip.localhost (app listens on 8787, ignoring PORT=47433)`. When
+that port is busy on a later run, `hh` says which process holds it. When the app exits,
+`hh` stops any process it left behind.
 
 Every host also answers on `*.<host>`, so `acme.quip.localhost` reaches the `quip` app.
 The port is a hash of the host in `40000–49999`. It stays the same run after run.
@@ -118,4 +124,4 @@ through. An unknown host gets a 503 page that lists live routes.
 The wrapper registers `{host, port, pid, folder}` over `~/.hh/hh.sock`. The daemon drops
 any route whose pid is gone within 5 seconds, so even `kill -9` leaves nothing behind.
 
-State lives in `~/.hh`: `routes.json`, `daemon.log`, and the CA under `caddy/pki`.
+State lives in `~/.hh`: `routes.json`, `ports.json` (the port each app really uses), `daemon.log`, and the CA under `caddy/pki`.

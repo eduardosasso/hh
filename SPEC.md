@@ -52,6 +52,7 @@ Step 4 is an opt-in prompt. Everything else is silent.
 | `hh url` | Print the URL for the current folder. Starts nothing. |
 | `hh url --json` | Same, as `{ "url", "host", "port" }`. |
 | `hh ls` | List live routes: host, port, pid, uptime, folder. |
+| `hh who [port]` | List listening TCP ports: port, pid, command, and host and folder for hh apps. With a port, show only it; exit 1 if nothing holds it. |
 | `hh open` | Open the URL in the browser. |
 | `hh init` | Bake the prefix into the project's dev script. See "Agents". |
 | `hh setup` | Machine setup. See "Install". |
@@ -106,7 +107,8 @@ When `hh <cmd>` runs:
 3. Ensure the daemon is up. If not, start it. No sudo.
 4. Register `{ host, port, pid, cwd, routes }` with the daemon over a unix socket.
 5. Print one line to stdout: `→ https://<host>`. Then exec `cmd` with inherited stdio.
-6. On exit or signal, deregister. The exit code is the child's.
+6. Watch the child's process tree. See "Port discovery".
+7. On exit or signal, stop leftover processes, then deregister. The exit code is the child's.
 
 Environment passed to the child:
 
@@ -135,11 +137,50 @@ the command.
 Rails, Next, Bun, Deno, Go, Django, Flask, Phoenix read `PORT` or take `$PORT`.
 No profile needed. A user-supplied port flag always wins over the profile.
 
+### Port discovery
+
+Many dev scripts ignore `PORT` and bind a fixed port such as `8787` or `3000`.
+`hh` finds the port the app really listens on.
+
+- Every 250 ms while the child lives, `hh` reads the child's process tree
+  (`ps -A -o pid=,ppid=,comm=`) and the TCP sockets those pids listen on, on loopback
+  or all interfaces. macOS: `lsof -nP -iTCP -sTCP:LISTEN -a -p <pids> -F pn`.
+  Linux: `/proc/net/tcp` and `/proc/net/tcp6`, inodes mapped to pids through
+  `/proc/<pid>/fd`. Polling for a port stops at the first hit.
+- `PORT` itself wins if the app listens on it. `--route` ports are skipped. Else the
+  lowest port wins.
+- Same as `PORT`: nothing to say.
+- Different: the wrapper registers the route again with the same pid and the new port.
+  The daemon replaces the route, keeps its start time, and reloads Caddy. One more line
+  goes to stdout after the first: `→ https://<host> (app listens on 8787, ignoring PORT=47433)`.
+- The wrapper records the found port as the host's usual port in `~/.hh/ports.json`.
+  When the app listens on `PORT` again, the entry is dropped. The daemon never reads it.
+
+Before the next start, if the usual port is busy, `hh` says who holds it on stderr and
+still starts the app:
+
+```
+hh: quip.localhost usually listens on 3000, but 3000 is held by bun (pid 4242) running overdew.localhost from ~/moonshot/overdew
+hh: free port for this run: 47433. Read $PORT in your dev script to use it.
+```
+
+"running <host> from <folder>" appears when the holder is in the process tree of a live
+hh route. Otherwise the line shows the command, pid, and the holder's working folder.
+`hh` prints the same two lines when the app exits non-zero within 15 s without a port.
+With no usual port known, it prints a hint to run `hh who`.
+
+After the child exits, `hh` sends SIGTERM to the processes it last saw in the child's
+tree that still run the same command, waits up to 2 s, then sends SIGKILL. It never
+signals other pids. The tree refreshes every 250 ms until the port is found, then every
+second. When it stops something, it prints one line:
+`hh: stopped 2 leftover processes (stripe, wrangler)`.
+
 ### Daemon
 
 - Embedded Caddy, in process. The binary is the proxy.
 - Listens on `:443` and `:80`. `:80` redirects to `https`.
 - Control socket: `~/.hh/hh.sock`. State file: `~/.hh/routes.json`.
+- `POST /routes` adds a route. The same pid posting the same host again moves it.
 - Every route carries the wrapper's pid. A sweep every 5 s removes routes whose pid is gone.
   A crashed wrapper never leaves a stale route.
 - Each route proxies to `127.0.0.1:<port>` with `X-Forwarded-*` headers and the
@@ -196,6 +237,11 @@ is ever wanted, it ships as a separate optional command.
 | Allocated port busy | Next free port. Stable port is a preference, not a promise. |
 | Child exits | Route removed within 5 s even on SIGKILL. |
 | Command not found | Same error and exit code the shell gives. |
+| App ignores `PORT` | Route moves to the port the app listens on. One extra `→` line names both ports. |
+| Usual port busy | Stderr names the holder (hh host and folder, or command, pid, and folder), gives the free port, and the app still starts. |
+| App exits early without a port | Same holder lines if the usual port is busy. Else a hint to run `hh who`. |
+| Child leaves processes behind | SIGTERM, then SIGKILL after 2 s. One stderr line lists them. |
+| `lsof` missing on macOS | Port discovery stops with an error line. The app keeps running. |
 
 ## Tech
 
