@@ -20,6 +20,7 @@ Usage:
   hh setup [--agents|--no-agents] one-time machine setup; --agents adds the rule to ~/AGENTS.md, --no-agents skips it
   hh daemon                      run the proxy in the foreground
   hh logs                        tail daemon logs
+  hh tail [name] [--all] [--json] [-n N]  stream requests for this app
 
 Flags:
   --name <n>            override the derived name
@@ -44,6 +45,7 @@ var commands = map[string]func([]string) error{
 	"setup":  setupCmd,
 	"daemon": daemonCmd,
 	"logs":   logsCmd,
+	"tail":   tailCmd,
 }
 
 func main() {
