@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -25,6 +26,8 @@ const (
 	retry    = 200 * time.Millisecond
 	page     = "hello from hh"
 	sweep    = 7 * time.Second
+
+	orphanWait = 3 * time.Second
 )
 
 func free(t *testing.T) int {
@@ -59,7 +62,9 @@ func stop(t *testing.T, cmd *exec.Cmd) {
 	}
 }
 
-func TestProxy(t *testing.T) {
+// boot builds hh and starts a daemon on free ports under a temp HOME.
+func boot(t *testing.T) (bin string, env []string, h string, https int) {
+	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not installed")
 	}
@@ -69,9 +74,9 @@ func TestProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(h) })
-	bin := build(t, h)
+	bin = build(t, h)
 	https, http80 := free(t), free(t)
-	env := append(os.Environ(), "HOME="+h,
+	env = append(os.Environ(), "HOME="+h,
 		fmt.Sprintf("HH_HTTPS_PORT=%d", https), fmt.Sprintf("HH_HTTP_PORT=%d", http80))
 
 	daemon := exec.Command(bin, "daemon")
@@ -86,6 +91,11 @@ func TestProxy(t *testing.T) {
 		}
 	})
 
+	return bin, env, h, https
+}
+
+func TestProxy(t *testing.T) {
+	bin, env, h, https := boot(t)
 	site := filepath.Join(h, "site")
 	if err := os.Mkdir(site, 0o755); err != nil {
 		t.Fatal(err)
@@ -144,8 +154,8 @@ func TestProxy(t *testing.T) {
 		t.Fatalf("hh ls: %s", out)
 	}
 	// A wrapper killed with SIGKILL cannot deregister; the sweep must drop it.
-	// Its python child survives, so stop that one by pid.
-	child, err := exec.Command("pgrep", "-P", strconv.Itoa(app.Process.Pid)).Output()
+	// Its python child survives, so stop that one by pid. Match the name: hh also runs ps.
+	child, err := exec.Command("pgrep", "-i", "-P", strconv.Itoa(app.Process.Pid), "python").Output()
 	if err != nil {
 		t.Fatalf("find python child: %v", err)
 	}
@@ -215,5 +225,148 @@ func fetch(t *testing.T, c *http.Client, url string, status int) string {
 			t.Fatalf("GET %s: %v", url, err)
 		}
 		time.Sleep(retry)
+	}
+}
+
+// held is a port no hh hash lands on, so the app visibly ignores PORT.
+const held = 38123
+
+// launch starts hh with args in dir and streams its stdout lines.
+func launch(t *testing.T, bin string, env []string, dir string, args ...string) (*exec.Cmd, <-chan string) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir, cmd.Env, cmd.Stderr = dir, env, os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			stop(t, cmd)
+		}
+	})
+	lines := make(chan string)
+	go func() {
+		defer close(lines)
+		sc := bufio.NewScanner(stdout)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
+
+	return cmd, lines
+}
+
+// expect waits for a stdout line containing want.
+func expect(t *testing.T, lines <-chan string, want string) {
+	t.Helper()
+	timer := time.After(deadline)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				t.Fatalf("stdout closed before %q", want)
+			}
+			if strings.Contains(l, want) {
+				go func() {
+					for range lines {
+					}
+				}()
+
+				return
+			}
+		case <-timer:
+			t.Fatalf("no line with %q after %s", want, deadline)
+		}
+	}
+}
+
+func TestDiscover(t *testing.T) {
+	bin, env, h, https := boot(t)
+	site := filepath.Join(h, "disc")
+	if err := os.Mkdir(site, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	moved := fmt.Sprintf("(app listens on %d, ignoring PORT=", held)
+	serve := func(name string) []string {
+		return []string{"--name", name, "python3", "-m", "http.server", strconv.Itoa(held)}
+	}
+
+	// disc2 runs alone once, so hh learns its usual port.
+	learn, lines := launch(t, bin, env, site, serve("disc2")...)
+	expect(t, lines, moved)
+	stop(t, learn)
+	ports, err := os.ReadFile(filepath.Join(h, ".hh", "ports.json"))
+	if err != nil || !strings.Contains(string(ports), fmt.Sprintf(`"disc2.localhost": %d`, held)) {
+		t.Fatalf("ports.json: %s, %v", ports, err)
+	}
+
+	_, lines = launch(t, bin, env, site, serve("disc")...)
+	expect(t, lines, moved)
+	body := fetch(t, trusted(t, h), fmt.Sprintf("https://disc.localhost:%d/", https), http.StatusOK)
+	if !strings.Contains(body, page) {
+		t.Fatalf("body %q", body)
+	}
+	who := exec.Command(bin, "who", strconv.Itoa(held))
+	who.Env = env
+	out, err := who.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "disc.localhost") {
+		t.Fatalf("hh who: %v\n%s", err, out)
+	}
+
+	// disc2 again: its usual port is now held by disc's python.
+	var stderr strings.Builder
+	second := exec.Command(bin, serve("disc2")...)
+	second.Dir, second.Env, second.Stderr = site, env, &stderr
+	err = second.Run()
+	if err == nil {
+		t.Fatal("second app exited 0 on a held port")
+	}
+	msg := strings.ToLower(stderr.String())
+	if !strings.Contains(msg, "held by python") || !strings.Contains(msg, "running disc.localhost") {
+		t.Fatalf("stderr:\n%s", stderr.String())
+	}
+}
+
+func TestOrphans(t *testing.T) {
+	bin, env, h, _ := boot(t)
+	pidFile := filepath.Join(h, "sleep.pid")
+	// The child starts sleep in its own session, lives long enough to be seen, then exits.
+	script := fmt.Sprintf(`import subprocess, time
+p = subprocess.Popen(["sleep", "300"], start_new_session=True)
+open(%q, "w").write(str(p.pid))
+time.sleep(1)`, pidFile)
+	var stderr strings.Builder
+	app := exec.Command(bin, "--name", "orph", "python3", "-c", script)
+	app.Dir, app.Env, app.Stderr = h, env, &stderr
+	if err := app.Run(); err != nil {
+		t.Fatalf("hh: %v\n%s", err, stderr.String())
+	}
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := time.Now().Add(orphanWait)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(end) {
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+				t.Logf("kill sleep: %v", err)
+			}
+			t.Fatalf("sleep %d alive %s after hh exited", pid, orphanWait)
+		}
+		time.Sleep(retry)
+	}
+	if !strings.Contains(stderr.String(), "stopped 1 leftover process (sleep)") {
+		t.Fatalf("stderr:\n%s", stderr.String())
 	}
 }
