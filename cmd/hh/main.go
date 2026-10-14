@@ -22,12 +22,22 @@ Usage:
   hh daemon                      run the proxy in the foreground
   hh logs                        tail daemon logs
   hh tail [name] [--all] [--json] [-n N]  stream requests for this app
+  hh version                     print the hh version
 
 Flags:
   --name <n>            override the derived name
   --port <p>            use a fixed port
   --route <path>=<port> send path to another local port (repeatable)
 `
+
+// version is set at release time with -ldflags "-X main.version=...".
+var version = "dev"
+
+func versionCmd([]string) error {
+	fmt.Println(version)
+
+	return nil
+}
 
 // exitError carries a specific exit code up to main.
 type exitError struct {
@@ -38,16 +48,17 @@ type exitError struct {
 func (e *exitError) Error() string { return e.err.Error() }
 
 var commands = map[string]func([]string) error{
-	"url":    urlCmd,
-	"ls":     lsCmd,
-	"who":    whoCmd,
-	"open":   openCmd,
-	"init":   initCmd,
-	"setup":  setupCmd,
-	"trust":  trustCmd,
-	"daemon": daemonCmd,
-	"logs":   logsCmd,
-	"tail":   tailCmd,
+	"url":     urlCmd,
+	"ls":      lsCmd,
+	"who":     whoCmd,
+	"open":    openCmd,
+	"init":    initCmd,
+	"setup":   setupCmd,
+	"trust":   trustCmd,
+	"daemon":  daemonCmd,
+	"logs":    logsCmd,
+	"tail":    tailCmd,
+	"version": versionCmd,
 }
 
 func main() {
