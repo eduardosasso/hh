@@ -12,8 +12,14 @@ No config. The folder name is the hostname. Every git worktree gets its own URL.
 ## Install
 
 ```bash
-go install github.com/eduardosasso/hh/cmd/hh@latest
+curl -fsSL https://raw.githubusercontent.com/eduardosasso/hh/main/install.sh | sh
 hh setup
+```
+
+Or from source:
+
+```bash
+go install github.com/eduardosasso/hh/cmd/hh@latest
 ```
 
 `hh setup` runs once per machine. It asks for sudo one time and then:
@@ -46,6 +52,7 @@ certificate warning.
 | `hh open` | Open the URL in the browser. |
 | `hh logs` | Tail the daemon log. |
 | `hh tail [name] [--all] [--json] [-n N]` | Stream the requests the proxy handled for this app. |
+| `hh version` | Print the version. |
 | `hh daemon` | Run the proxy in the foreground. |
 
 Flags, before the command: `--name <n>`, `--port <p>`, `--route <path>=<port>` (repeatable).
@@ -151,3 +158,7 @@ The wrapper registers `{host, port, pid, folder}` over `~/.hh/hh.sock`. The daem
 any route whose pid is gone within 5 seconds, so even `kill -9` leaves nothing behind.
 
 State lives in `~/.hh`: `routes.json`, `ports.json` (the port each app really uses), `daemon.log`, `access.log` (the request log), and the CA under `caddy/pki`.
+
+## Contributing
+
+Read [SPEC.md](SPEC.md) first. CI runs `gofmt`, `go vet`, `go test`, and `go build`; run them before you open a PR.

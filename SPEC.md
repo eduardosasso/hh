@@ -301,7 +301,7 @@ is ever wanted, it ships as a separate optional command.
 ## Tech
 
 - Go. Single static binary. Caddy imported as a library.
-- Release with goreleaser: Homebrew tap, curl install script, GitHub releases.
+- Release with goreleaser: GitHub releases and a curl install script. Homebrew tap: later.
 - Tests: unit tests for naming and port hashing. Integration test that starts the daemon,
   runs `hh python -m http.server`, and fetches the URL with a trusted client.
 - No config file format. Flags and env only.
