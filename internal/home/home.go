@@ -14,10 +14,16 @@ const (
 	stateName   = "routes.json"
 	portsName   = "ports.json"
 	logName     = "daemon.log"
+	accessName  = "access.log"
 	storageName = "caddy"
 	defaultHTTP = 80
 	dirMode     = 0o700
 	logMode     = 0o600
+
+	// AccessRollMB is the size at which the request log rolls over.
+	AccessRollMB = 10
+	// AccessKeep is how many rolled request logs stay on disk.
+	AccessKeep = 3
 
 	// DefaultHTTPS is the port that URLs leave out.
 	DefaultHTTPS = 443
@@ -57,6 +63,9 @@ func Ports() (string, error) { return join(portsName) }
 
 // Log is the daemon log file.
 func Log() (string, error) { return join(logName) }
+
+// Access is the request log Caddy writes, one JSON object per line.
+func Access() (string, error) { return join(accessName) }
 
 // Storage is the Caddy storage root.
 func Storage() (string, error) { return join(storageName) }

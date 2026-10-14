@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/eduardosasso/hh/internal/access"
 	"github.com/eduardosasso/hh/internal/home"
 	"github.com/eduardosasso/hh/internal/route"
 )
@@ -17,10 +18,24 @@ import (
 // which happen every time any app starts or stops.
 const streamCloseDelay = "24h"
 
+const (
+	// accessLogger names the request log; Caddy emits it as http.log.access.<name>.
+	accessLogger = "requests"
+)
+
+// redacted are access log fields that may carry credentials. They never reach the file.
+var redacted = []string{
+	"request>headers>Cookie",
+	"request>headers>Authorization",
+	"request>headers>Proxy-Authorization",
+	"resp_headers>Set-Cookie",
+}
+
 // Settings are the machine-level inputs to the Caddy config.
 type Settings struct {
 	Storage string
 	Log     string
+	Access  string
 	HTTPS   int
 	HTTP    int
 }
@@ -32,10 +47,14 @@ func Config(routes []route.Route, s Settings) ([]byte, error) {
 	cfg := object{
 		"admin":   object{"disabled": true, "config": object{"persist": false}},
 		"storage": object{"module": "file_system", "root": s.Storage},
-		"logging": object{"logs": object{"default": object{
-			"writer":  object{"output": "file", "filename": s.Log, "roll": false},
-			"encoder": object{"format": "console", "level_format": "upper", "time_local": true},
-		}}},
+		"logging": object{"logs": object{
+			"default": object{
+				"writer":  object{"output": "file", "filename": s.Log, "roll": false},
+				"encoder": object{"format": "console", "level_format": "upper", "time_local": true},
+				"exclude": []string{accessName()},
+			},
+			accessLogger: accessLog(s.Access),
+		}},
 		"apps": object{
 			"http": object{
 				"http_port":  s.HTTP,
@@ -46,10 +65,13 @@ func Config(routes []route.Route, s Settings) ([]byte, error) {
 						"routes":                  append(proxies(routes), fallback(routes, s.HTTPS)),
 						"tls_connection_policies": []object{{}},
 						"automatic_https":         object{"disable_redirects": true},
+						"errors":                  object{"routes": []object{failure()}},
+						"logs":                    object{"default_logger_name": accessLogger},
 					},
 					"redirect": object{
 						"listen": []string{fmt.Sprintf(":%d", s.HTTP)},
 						"routes": []object{redirect(s.HTTPS)},
+						"logs":   object{"default_logger_name": accessLogger},
 					},
 				},
 			},
@@ -72,6 +94,39 @@ func Config(routes []route.Route, s Settings) ([]byte, error) {
 	}
 
 	return b, nil
+}
+
+func accessName() string { return "http.log.access." + accessLogger }
+
+// access writes request logs as JSON lines to their own rolling file.
+func accessLog(path string) object {
+	fields := object{}
+	for _, f := range redacted {
+		fields[f] = object{"filter": "delete"}
+	}
+
+	return object{
+		"writer": object{
+			"output":       "file",
+			"filename":     path,
+			"roll_size_mb": home.AccessRollMB,
+			"roll_keep":    home.AccessKeep,
+		},
+		"encoder": object{
+			"format": "filter",
+			"wrap":   object{"format": "json", "time_format": "unix_seconds_float", "duration_format": "seconds"},
+			"fields": fields,
+		},
+		"include": []string{accessName()},
+	}
+}
+
+// failure records why the proxy failed in the access log, then answers with the error status.
+func failure() object {
+	return object{"handle": []object{
+		{"handler": "log_append", "key": access.ErrorKey, "value": "{http.error.message}"},
+		{"handler": "static_response", "status_code": "{http.error.status_code}"},
+	}}
 }
 
 type match struct {
@@ -108,12 +163,17 @@ func proxies(routes []route.Route) []object {
 	for i, m := range ms {
 		out[i] = object{
 			"match":    []object{{"host": []string{m.pattern}}},
-			"handle":   []object{handler(m.route)},
+			"handle":   []object{latency(), handler(m.route)},
 			"terminal": true,
 		}
 	}
 
 	return out
+}
+
+// latency adds the upstream latency to the access log once the proxy is done.
+func latency() object {
+	return object{"handler": "log_append", "key": access.LatencyKey, "value": "{http.reverse_proxy.upstream.latency}"}
 }
 
 func handler(r route.Route) object {

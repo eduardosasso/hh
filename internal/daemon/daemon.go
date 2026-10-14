@@ -78,6 +78,9 @@ func setup() (*daemon, func(), error) {
 	}
 	d := &daemon{log: slog.New(slog.NewTextHandler(w, nil)).With("component", "hh")}
 	d.settings.Log = f.Name()
+	if d.settings.Access, err = home.Access(); err != nil {
+		return nil, closeLog, err
+	}
 	if d.settings.Storage, err = home.Storage(); err != nil {
 		return nil, closeLog, err
 	}

@@ -62,3 +62,21 @@ func TestConfigValid(t *testing.T) {
 		t.Error("admin endpoint must be disabled")
 	}
 }
+
+func TestAccessLog(t *testing.T) {
+	b, err := Config([]route.Route{{Host: "quip.localhost", Port: 40000}}, Settings{Storage: "/s", Log: "/l", Access: "/a.log", HTTPS: 443, HTTP: 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// encoding/json escapes ">" in the redacted field paths.
+	s := strings.ReplaceAll(string(b), `\u003e`, ">")
+	for _, want := range append(redacted,
+		`"filename":"/a.log"`, `"roll_size_mb":10`, `"roll_keep":3`,
+		`"default_logger_name":"requests"`, `"include":["http.log.access.requests"]`, `"exclude":["http.log.access.requests"]`,
+		`"key":"app_latency"`, `{http.reverse_proxy.upstream.latency}`, `{http.error.message}`,
+	) {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}
