@@ -58,6 +58,7 @@ Step 4 is an opt-in prompt. Everything else is silent.
 | `hh setup` | Machine setup. See "Install". |
 | `hh daemon` | Run the proxy in the foreground. Used by the service. |
 | `hh logs` | Tail daemon logs. |
+| `hh tail [name] [--all] [--json] [-n N]` | Stream the requests the proxy handled for this app. See "Request log". |
 
 Flags on `hh <cmd>`:
 
@@ -195,6 +196,47 @@ second. When it stops something, it prints one line:
   original `Host`. WebSockets pass through.
 - An unknown host returns a 503 page that lists the live routes.
 
+### Request log
+
+The proxy sees every request, so `hh tail` needs nothing from the app.
+
+- Caddy writes one JSON object per request to `~/.hh/access.log`. One file for all hosts,
+  for both the `:443` and the `:80` server. Caddy's own runtime logs stay in `daemon.log`.
+- The file rolls at 10 MB and keeps 3 rolled files (gzipped).
+- Each line has the time, host, method, URI, protocol, status, size, duration, remote IP,
+  request and response headers, `app_latency` (the upstream response header latency,
+  from `log_append` before `reverse_proxy`), and `error` (the reason Caddy recorded when
+  the proxy failed, from `log_append` in the error routes).
+- Redaction: a `filter` encoder deletes `Cookie`, `Authorization`, and
+  `Proxy-Authorization` request headers and the `Set-Cookie` response header. Bodies are
+  never logged.
+- A WebSocket upgrade is logged when the connection closes, so its duration is how long
+  it was open.
+- The daemon writes the file only after it restarts with this config.
+
+`hh tail` picks the app like `hh url`, or takes a name or full host, or `--all`. It shows
+the host and its tenant subdomains, but not subdomains that are live routes of their
+own, such as `api.quip.localhost` or a worktree. It prints the last `N` matching requests
+(`-n`, default 20, `0` for none), then follows the file every 200 ms and survives
+rotation. Ctrl-C exits 0. `--json` prints the raw line plus `app`, `host`, and `folder`
+(the live route's folder, empty if none).
+
+```
+16:02:11  quip  GET   /p/abc/polish        200   41ms  html 12kB
+16:02:12  quip  POST  /api/pledge          500  812ms  (app 790ms) json 1.2kB
+16:02:13  quip  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
+16:02:20  quip  GET   /__vite_hmr          101  ws 32s
+16:02:30  quip  GET   /api/health          502    1ms  !! nothing listens on 47433
+```
+
+Columns: local time, app (host without `.localhost`), method, path with query (cut to 60
+characters with `…`), status, total duration, then `(app <latency>)` when the upstream
+latency is more than 5 ms below the total. Last comes one of: the short content type
+(`html`, `json`, `js`, `css`, `svg`, `png`, else the subtype) and size; `→ <Location>`
+for a 3xx; nothing more for a WebSocket, whose duration column reads `ws <open time>`;
+`!! <reason>` when the proxy failed, such as `nothing listens on 47433` or `timeout`.
+Sizes: `812B`, `1.2kB`, `3.4MB`. Durations: `<1ms`, `41ms`, `1.2s`, `32s`.
+
 ### HTTPS
 
 - Caddy's internal CA. Root lives in `~/.hh/pki`.
@@ -250,6 +292,8 @@ is ever wanted, it ships as a separate optional command.
 | App exits early without a port | Same holder lines if the usual port is busy. Else a hint to run `hh who`. |
 | Child leaves processes behind | SIGTERM, then SIGKILL after 2 s. One stderr line lists them. |
 | `lsof` missing on macOS | Port discovery stops with an error line. The app keeps running. |
+| Request log missing | `hh tail` says `no requests yet` on stderr and waits for the file. |
+| Unreadable request log line | `hh tail` skips it. One stderr warning per run. |
 
 ## Tech
 

@@ -41,6 +41,7 @@ certificate warning.
 | `hh who [port]` | Show which process listens on each port, and its hh host. |
 | `hh open` | Open the URL in the browser. |
 | `hh logs` | Tail the daemon log. |
+| `hh tail [name] [--all] [--json] [-n N]` | Stream the requests the proxy handled for this app. |
 | `hh daemon` | Run the proxy in the foreground. |
 
 Flags, before the command: `--name <n>`, `--port <p>`, `--route <path>=<port>` (repeatable).
@@ -65,6 +66,25 @@ that port is busy on a later run, `hh` says which process holds it. When the app
 
 Every host also answers on `*.<host>`, so `acme.quip.localhost` reaches the `quip` app.
 The port is a hash of the host in `40000–49999`. It stays the same run after run.
+
+## Watch requests
+
+`hh tail` streams every request the proxy handled for this app. The app changes nothing.
+
+```
+$ hh tail
+16:02:11  quip  GET   /p/abc/polish        200   41ms  html 12kB
+16:02:12  quip  POST  /api/pledge          500  812ms  (app 790ms) json 1.2kB
+16:02:13  quip  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
+16:02:20  quip  GET   /__vite_hmr          101  ws 32s
+16:02:30  quip  GET   /api/health          502    1ms  !! nothing listens on 47433
+```
+
+`(app …)` is the time the app took to answer, shown when the proxy added more than 5 ms.
+`hh tail quip` works from anywhere, `--all` shows every app, `-n 0` skips history, and
+`--json` prints one object per request for agents. The log is `~/.hh/access.log`. Cookies
+and auth headers are removed before they reach the file. Restart the daemon once after
+upgrading so it starts writing the log.
 
 ## Stacks
 
@@ -126,4 +146,4 @@ through. An unknown host gets a 503 page that lists live routes.
 The wrapper registers `{host, port, pid, folder}` over `~/.hh/hh.sock`. The daemon drops
 any route whose pid is gone within 5 seconds, so even `kill -9` leaves nothing behind.
 
-State lives in `~/.hh`: `routes.json`, `ports.json` (the port each app really uses), `daemon.log`, and the CA under `caddy/pki`.
+State lives in `~/.hh`: `routes.json`, `ports.json` (the port each app really uses), `daemon.log`, `access.log` (the request log), and the CA under `caddy/pki`.
