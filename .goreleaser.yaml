@@ -1,0 +1,30 @@
+version: 2
+
+builds:
+  - id: hh
+    main: ./cmd/hh
+    binary: hh
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: hh
+    formats: [tar.gz]
+    name_template: "hh_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^spec"
