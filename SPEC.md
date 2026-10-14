@@ -39,10 +39,9 @@ hh setup
 1. Trusts the internal root certificate in the OS trust store. One sudo prompt.
 2. On Linux, runs `setcap cap_net_bind_service` on the binary. Same prompt.
 3. Installs the daemon as a login service: launchd on macOS, systemd user unit on Linux.
-4. Asks to add the agent rule to `~/.claude/CLAUDE.md` and `~/AGENTS.md`. See "Agents".
-5. Asks to install the Claude Code hook. See "Agents".
+4. Asks to add the agent rule to `~/AGENTS.md`. See "Agents".
 
-Steps 4 and 5 are opt-in prompts. Everything else is silent.
+Step 4 is an opt-in prompt. Everything else is silent.
 
 ## Commands
 
@@ -169,19 +168,22 @@ with no setup. Nested names like `a.b.c.localhost` work. No DNS server, no resol
 
 ## Agents
 
-Three layers. Each one works alone.
+`hh` is tied to no agent harness. It writes only to `AGENTS.md`, the open convention
+that Claude Code, Codex, Cursor, Copilot, and Gemini CLI all read. It never writes to a
+vendor folder such as `~/.claude`. Two layers, and each one works alone.
 
-1. **Global rule.** `hh setup` offers to append one line to `~/.claude/CLAUDE.md` and
-   `~/AGENTS.md`: *"Start every dev server with the `hh` prefix. Use the URL it
-   prints, never `localhost:<port>`."*
-2. **Hook.** `hh setup` offers a `PreToolUse` hook for Bash in `~/.claude/settings.json`.
-   It matches known dev-server commands with no `hh` prefix and blocks with:
-   *"Run this through `hh`."* The agent retries correctly.
-3. **Project.** `hh init` rewrites the `dev` script in `package.json`, `Procfile`, or
-   `Makefile` to start with `hh`, and adds the same one line to the project's `AGENTS.md`.
-   Then `bun run dev` already does the right thing on any machine.
+1. **Global rule.** `hh setup` offers to append one line to `~/AGENTS.md`:
+   *"Start every dev server with the `hh` prefix. Use the URL it prints, never
+   `localhost:<port>`."*
+2. **Project.** `hh init` rewrites the `dev` script in `package.json` or `Procfile` to
+   start with `hh`, and adds the same line to the project's `AGENTS.md`. Then
+   `bun run dev` already does the right thing for every agent and every human, with no
+   knowledge of `hh` at all. A `Makefile` gets a printed hint, not an edit.
 
 `hh url --json` gives an agent the address before anything starts.
+
+A harness-specific adapter, such as a Claude Code hook, is never part of `setup`. If one
+is ever wanted, it ships as a separate optional command.
 
 ## Failure modes
 
