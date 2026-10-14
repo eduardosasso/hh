@@ -137,7 +137,7 @@ type match struct {
 func (m match) wildcard() bool { return strings.HasPrefix(m.pattern, "*.") }
 
 // order puts exact hosts before wildcards, and deeper names first, so the most
-// specific host wins: wt-173.overdew.localhost beats *.overdew.localhost.
+// specific host wins: wt-173.blog.localhost beats *.blog.localhost.
 func order(a, b match) int {
 	if a.wildcard() != b.wildcard() {
 		if a.wildcard() {

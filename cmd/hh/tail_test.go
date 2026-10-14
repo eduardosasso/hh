@@ -16,14 +16,14 @@ func at() time.Time {
 }
 
 func entry(method, uri string, status int, total, app time.Duration) access.Entry {
-	return access.Entry{Time: at(), Host: "quip.localhost", Method: method, URI: uri, Status: status, Duration: total, App: app}
+	return access.Entry{Time: at(), Host: "shop.localhost", Method: method, URI: uri, Status: status, Duration: total, App: app}
 }
 
 func TestFormat(t *testing.T) {
-	html := entry("GET", "/p/abc/polish", 200, 41*time.Millisecond, 38*time.Millisecond)
+	html := entry("GET", "/products/42", 200, 41*time.Millisecond, 38*time.Millisecond)
 	html.Type, html.Size = "text/html; charset=utf-8", 12000
 
-	pledge := entry("POST", "/api/pledge", 500, 812*time.Millisecond, 790*time.Millisecond)
+	pledge := entry("POST", "/api/orders", 500, 812*time.Millisecond, 790*time.Millisecond)
 	pledge.Type, pledge.Size = "application/json", 1234
 
 	checkout := entry("GET", "/checkout", 303, 9*time.Millisecond, 9*time.Millisecond)
@@ -48,17 +48,17 @@ func TestFormat(t *testing.T) {
 		in   access.Entry
 		want string
 	}{
-		{"html within app slack", html, "16:02:11  quip  GET   /p/abc/polish        200   41ms  html 12kB"},
-		{"json with app time", pledge, "16:02:11  quip  POST  /api/pledge          500  812ms  (app 790ms) json 1.2kB"},
-		{"redirect", checkout, "16:02:11  quip  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test"},
-		{"websocket", ws, "16:02:11  quip  GET   /__vite_hmr          101  ws 32s"},
-		{"refused", dead, "16:02:11  quip  GET   /api/health          502    1ms  !! nothing listens on 47433"},
-		{"timeout", slow, "16:02:11  quip  GET   /slow                504     3s  !! timeout"},
-		{"truncated", long, "16:02:11  quip  GET   /" + strings.Repeat("a", 58) + "…  200   1.2s  plain 812B"},
-		{"sub millisecond", png, "16:02:11  quip  GET   /logo.png            200   <1ms  png 3.4MB"},
+		{"html within app slack", html, "16:02:11  shop  GET   /products/42         200   41ms  html 12kB"},
+		{"json with app time", pledge, "16:02:11  shop  POST  /api/orders          500  812ms  (app 790ms) json 1.2kB"},
+		{"redirect", checkout, "16:02:11  shop  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test"},
+		{"websocket", ws, "16:02:11  shop  GET   /__vite_hmr          101  ws 32s"},
+		{"refused", dead, "16:02:11  shop  GET   /api/health          502    1ms  !! nothing listens on 47433"},
+		{"timeout", slow, "16:02:11  shop  GET   /slow                504     3s  !! timeout"},
+		{"truncated", long, "16:02:11  shop  GET   /" + strings.Repeat("a", 58) + "…  200   1.2s  plain 812B"},
+		{"sub millisecond", png, "16:02:11  shop  GET   /logo.png            200   <1ms  png 3.4MB"},
 	}
 	for _, c := range cases {
-		if got := format(c.in, len("quip")); got != c.want {
+		if got := format(c.in, len("shop")); got != c.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", c.name, got, c.want)
 		}
 	}
@@ -97,43 +97,43 @@ func scoped(all bool, host string, routes ...route.Route) *scope {
 
 func TestScope(t *testing.T) {
 	routes := []route.Route{
-		{Host: "quip.localhost", Cwd: "/code/quip"},
-		{Host: "api.quip.localhost", Cwd: "/code/quip"},
-		{Host: "wt.quip.localhost", Cwd: "/code/quip-wt"},
+		{Host: "shop.localhost", Cwd: "/code/shop"},
+		{Host: "api.shop.localhost", Cwd: "/code/shop"},
+		{Host: "wt.shop.localhost", Cwd: "/code/shop-wt"},
 		{Host: "other.localhost"},
 	}
-	s := scoped(false, "quip.localhost", routes...)
+	s := scoped(false, "shop.localhost", routes...)
 	cases := map[string]bool{
-		"quip.localhost":           true,
-		"acme.quip.localhost":      true,
-		"api.quip.localhost":       false,
-		"x.api.quip.localhost":     false,
-		"wt.quip.localhost":        false,
+		"shop.localhost":           true,
+		"acme.shop.localhost":      true,
+		"api.shop.localhost":       false,
+		"x.api.shop.localhost":     false,
+		"wt.shop.localhost":        false,
 		"other.localhost":          false,
-		"notquip.localhost":        false,
+		"notshop.localhost":        false,
 		"acme.other.localhost":     false,
-		"deep.acme.quip.localhost": true,
+		"deep.acme.shop.localhost": true,
 	}
 	for host, want := range cases {
 		if got := s.keep(access.Entry{Host: host}); got != want {
 			t.Errorf("keep(%s) = %v, want %v", host, got, want)
 		}
 	}
-	if !scoped(true, "", routes...).keep(access.Entry{Host: "api.quip.localhost"}) {
+	if !scoped(true, "", routes...).keep(access.Entry{Host: "api.shop.localhost"}) {
 		t.Error("--all must keep every host")
 	}
 	// Tailing an app that is not running still matches its host.
 	if !scoped(false, "idle.localhost").keep(access.Entry{Host: "t.idle.localhost"}) {
 		t.Error("idle app tenant not kept")
 	}
-	if got := s.owner("acme.wt.quip.localhost").Cwd; got != "/code/quip-wt" {
+	if got := s.owner("acme.wt.shop.localhost").Cwd; got != "/code/shop-wt" {
 		t.Errorf("owner folder %q", got)
 	}
 }
 
 func TestTailFlags(t *testing.T) {
-	o, err := tailFlags([]string{"quip", "-n", "5", "--json"})
-	if err != nil || o.name != "quip" || o.last != 5 || !o.json {
+	o, err := tailFlags([]string{"shop", "-n", "5", "--json"})
+	if err != nil || o.name != "shop" || o.last != 5 || !o.json {
 		t.Fatalf("%+v %v", o, err)
 	}
 	if o, err = tailFlags(nil); err != nil || o.last != tailLast {
@@ -148,8 +148,8 @@ func TestTailFlags(t *testing.T) {
 
 func TestJSON(t *testing.T) {
 	var out bytes.Buffer
-	p := &printer{out: &out, json: true, scope: scoped(false, "quip.localhost", route.Route{Host: "quip.localhost", Cwd: "/code/quip"})}
-	e := access.Entry{Host: "acme.quip.localhost", Raw: map[string]any{"status": float64(200)}}
+	p := &printer{out: &out, json: true, scope: scoped(false, "shop.localhost", route.Route{Host: "shop.localhost", Cwd: "/code/shop"})}
+	e := access.Entry{Host: "acme.shop.localhost", Raw: map[string]any{"status": float64(200)}}
 	if err := p.print(e); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["app"] != "acme.quip" || got["host"] != "acme.quip.localhost" || got["folder"] != "/code/quip" || got["status"] != float64(200) {
+	if got["app"] != "acme.shop" || got["host"] != "acme.shop.localhost" || got["folder"] != "/code/shop" || got["status"] != float64(200) {
 		t.Fatalf("%v", got)
 	}
 }

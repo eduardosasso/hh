@@ -4,7 +4,7 @@ One binary. Prefix any dev command. Get a stable `https://<name>.localhost` URL.
 
 ```
 hh bun run dev
-→ https://quip.localhost
+→ https://shop.localhost
 ```
 
 ## Problem
@@ -87,14 +87,14 @@ Examples:
 
 | Folder | Branch | Host |
 |---|---|---|
-| `~/code/quip` | main | `quip.localhost` |
-| `~/code/quip` | `feat/auth` | `quip.localhost` |
-| `~/code/overdew-wt-173` (worktree of `overdew`) | `fix/recap-unread` | `fix-recap-unread.overdew.localhost` |
-| `hh api -- bun run api` in `quip` | main | `api.quip.localhost` |
+| `~/code/shop` | main | `shop.localhost` |
+| `~/code/shop` | `feat/auth` | `shop.localhost` |
+| `~/code/blog-wt-173` (worktree of `blog`) | `feat/search` | `feat-search.blog.localhost` |
+| `hh api -- bun run api` in `shop` | main | `api.shop.localhost` |
 
 Every host also registers `*.<host>`, so tenant subdomains like
-`acme.quip.localhost` reach the same app with no flag. Caddy matches the most
-specific host, so `wt-173.overdew.localhost` wins over `*.overdew.localhost`.
+`acme.shop.localhost` reach the same app with no flag. Caddy matches the most
+specific host, so `wt-173.blog.localhost` wins over `*.blog.localhost`.
 
 Collision: two different folders that derive the same host. The second one fails
 with the first one's folder in the message and a hint to use `--name`.
@@ -170,7 +170,7 @@ Before the next start, if the usual port is busy, `hh` says who holds it on stde
 still starts the app:
 
 ```
-hh: quip.localhost usually listens on 3000, but 3000 is held by bun (pid 4242) running overdew.localhost from ~/moonshot/overdew
+hh: shop.localhost usually listens on 3000, but 3000 is held by bun (pid 4242) running blog.localhost from ~/code/blog
 hh: free port for this run: 47433. Read $PORT in your dev script to use it.
 ```
 
@@ -217,17 +217,17 @@ The proxy sees every request, so `hh tail` needs nothing from the app.
 
 `hh tail` picks the app like `hh url`, or takes a name or full host, or `--all`. It shows
 the host and its tenant subdomains, but not subdomains that are live routes of their
-own, such as `api.quip.localhost` or a worktree. It prints the last `N` matching requests
+own, such as `api.shop.localhost` or a worktree. It prints the last `N` matching requests
 (`-n`, default 20, `0` for none), then follows the file every 200 ms and survives
 rotation. Ctrl-C exits 0. `--json` prints the raw line plus `app`, `host`, and `folder`
 (the live route's folder, empty if none).
 
 ```
-16:02:11  quip  GET   /p/abc/polish        200   41ms  html 12kB
-16:02:12  quip  POST  /api/pledge          500  812ms  (app 790ms) json 1.2kB
-16:02:13  quip  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
-16:02:20  quip  GET   /__vite_hmr          101  ws 32s
-16:02:30  quip  GET   /api/health          502    1ms  !! nothing listens on 47433
+16:02:11  shop  GET   /products/42         200   41ms  html 12kB
+16:02:12  shop  POST  /api/orders          500  812ms  (app 790ms) json 1.2kB
+16:02:13  shop  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
+16:02:20  shop  GET   /__vite_hmr          101  ws 32s
+16:02:30  shop  GET   /api/health          502    1ms  !! nothing listens on 47433
 ```
 
 Columns: local time, app (host without `.localhost`), method, path with query (cut to 60
@@ -309,10 +309,10 @@ is ever wanted, it ships as a separate optional command.
 ## Acceptance
 
 - [ ] Fresh Mac: `brew install hh && hh setup`, one sudo prompt, done.
-- [ ] `hh bun run dev` in `quip` prints `→ https://quip.localhost` and the page loads green in Safari, Chrome, and `curl`.
-- [ ] Same command in a worktree on branch `wt-173` prints `→ https://wt-173.overdew.localhost`. Both run at the same time.
-- [ ] `git switch feat/auth` in the main checkout. `hh url` still prints `https://quip.localhost`.
-- [ ] `acme.quip.localhost` reaches the `quip` app with no flag.
+- [ ] `hh bun run dev` in `shop` prints `→ https://shop.localhost` and the page loads green in Safari, Chrome, and `curl`.
+- [ ] Same command in a worktree on branch `wt-173` prints `→ https://wt-173.blog.localhost`. Both run at the same time.
+- [ ] `git switch feat/auth` in the main checkout. `hh url` still prints `https://shop.localhost`.
+- [ ] `acme.shop.localhost` reaches the `shop` app with no flag.
 - [ ] `hh vite` works with HMR through the proxy.
 - [ ] Kill the wrapper with `kill -9`. `hh ls` is clean within 5 s.
 - [ ] `hh url --json` works with no daemon and no app running.

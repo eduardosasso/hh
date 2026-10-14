@@ -41,8 +41,8 @@ func host(t *testing.T, dir string, o Options) string {
 
 func TestSlug(t *testing.T) {
 	cases := map[string]string{
-		"Quip":                "quip",
-		"fix/recap-unread":    "fix-recap-unread",
+		"Shop":                "shop",
+		"feat/search":         "feat-search",
 		"--My__App  v2--":     "my-app-v2",
 		"wt-173":              "wt-173",
 		"feature/ÜBER/thing!": "feature-ber-thing",
@@ -55,38 +55,38 @@ func TestSlug(t *testing.T) {
 }
 
 func TestMainCheckout(t *testing.T) {
-	dir := newRepo(t, "Quip")
-	if got := host(t, dir, Options{}); got != "quip.localhost" {
+	dir := newRepo(t, "Shop")
+	if got := host(t, dir, Options{}); got != "shop.localhost" {
 		t.Fatalf("got %q", got)
 	}
 	run(t, dir, "switch", "-q", "-c", "feat/auth")
-	if got := host(t, dir, Options{}); got != "quip.localhost" {
+	if got := host(t, dir, Options{}); got != "shop.localhost" {
 		t.Fatalf("branch switch changed host: %q", got)
 	}
 	sub := filepath.Join(dir, "web", "src")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := host(t, sub, Options{}); got != "quip.localhost" {
+	if got := host(t, sub, Options{}); got != "shop.localhost" {
 		t.Fatalf("subfolder: %q", got)
 	}
 }
 
 func TestWorktree(t *testing.T) {
-	dir := newRepo(t, "overdew")
-	wt := filepath.Join(filepath.Dir(dir), "overdew-wt-173")
-	run(t, dir, "worktree", "add", "-q", "-b", "fix/recap-unread", wt)
-	if got := host(t, wt, Options{}); got != "fix-recap-unread.overdew.localhost" {
+	dir := newRepo(t, "blog")
+	wt := filepath.Join(filepath.Dir(dir), "blog-wt-173")
+	run(t, dir, "worktree", "add", "-q", "-b", "feat/search", wt)
+	if got := host(t, wt, Options{}); got != "feat-search.blog.localhost" {
 		t.Fatalf("got %q", got)
 	}
-	if got := host(t, dir, Options{}); got != "overdew.localhost" {
+	if got := host(t, dir, Options{}); got != "blog.localhost" {
 		t.Fatalf("main checkout: %q", got)
 	}
 }
 
 func TestLabel(t *testing.T) {
-	dir := newRepo(t, "quip")
-	if got := host(t, dir, Options{Label: "API"}); got != "api.quip.localhost" {
+	dir := newRepo(t, "shop")
+	if got := host(t, dir, Options{Label: "API"}); got != "api.shop.localhost" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -102,10 +102,10 @@ func TestNoGit(t *testing.T) {
 }
 
 func TestOverride(t *testing.T) {
-	dir := newRepo(t, "quip")
+	dir := newRepo(t, "shop")
 	cases := map[string]string{
 		"blog":           "blog.localhost",
-		"Admin.Quip":     "admin.quip.localhost",
+		"Admin.Shop":     "admin.shop.localhost",
 		"blog.localhost": "blog.localhost",
 	}
 	for in, want := range cases {

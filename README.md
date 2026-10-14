@@ -4,7 +4,7 @@ Prefix any dev command. Get a stable `https://<name>.localhost` URL.
 
 ```
 $ hh bun run dev
-→ https://quip.localhost
+→ https://shop.localhost
 ```
 
 No config. The folder name is the hostname. Every git worktree gets its own URL.
@@ -66,16 +66,16 @@ command itself, so quote it (`'$PORT'`) and it works in every shell.
 
 | Folder | Branch | URL |
 |---|---|---|
-| `~/code/quip` | any | `https://quip.localhost` |
-| `~/code/overdew-wt-173`, worktree of `overdew` | `fix/recap-unread` | `https://fix-recap-unread.overdew.localhost` |
-| `hh api -- bun run api` in `quip` | any | `https://api.quip.localhost` |
+| `~/code/shop` | any | `https://shop.localhost` |
+| `~/code/blog-wt-173`, worktree of `blog` | `feat/search` | `https://feat-search.blog.localhost` |
+| `hh api -- bun run api` in `shop` | any | `https://api.shop.localhost` |
 
 If the app ignores `PORT` and listens on a fixed port, `hh` finds that port and routes to
-it. It prints `→ https://quip.localhost (app listens on 8787, ignoring PORT=47433)`. When
+it. It prints `→ https://shop.localhost (app listens on 8787, ignoring PORT=47433)`. When
 that port is busy on a later run, `hh` says which process holds it. When the app exits,
 `hh` stops any process it left behind.
 
-Every host also answers on `*.<host>`, so `acme.quip.localhost` reaches the `quip` app.
+Every host also answers on `*.<host>`, so `acme.shop.localhost` reaches the `shop` app.
 The port is a hash of the host in `40000–49999`. It stays the same run after run.
 
 ## Watch requests
@@ -84,15 +84,15 @@ The port is a hash of the host in `40000–49999`. It stays the same run after r
 
 ```
 $ hh tail
-16:02:11  quip  GET   /p/abc/polish        200   41ms  html 12kB
-16:02:12  quip  POST  /api/pledge          500  812ms  (app 790ms) json 1.2kB
-16:02:13  quip  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
-16:02:20  quip  GET   /__vite_hmr          101  ws 32s
-16:02:30  quip  GET   /api/health          502    1ms  !! nothing listens on 47433
+16:02:11  shop  GET   /products/42         200   41ms  html 12kB
+16:02:12  shop  POST  /api/orders          500  812ms  (app 790ms) json 1.2kB
+16:02:13  shop  GET   /checkout            303    9ms  → https://checkout.stripe.com/c/pay/cs_test_…
+16:02:20  shop  GET   /__vite_hmr          101  ws 32s
+16:02:30  shop  GET   /api/health          502    1ms  !! nothing listens on 47433
 ```
 
 `(app …)` is the time the app took to answer, shown when the proxy added more than 5 ms.
-`hh tail quip` works from anywhere, `--all` shows every app, `-n 0` skips history, and
+`hh tail shop` works from anywhere, `--all` shows every app, `-n 0` skips history, and
 `--json` prints one object per request for agents. The log is `~/.hh/access.log`. Cookies
 and auth headers are removed before they reach the file. Restart the daemon once after
 upgrading so it starts writing the log.

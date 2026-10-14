@@ -6,7 +6,7 @@ import (
 )
 
 func TestHashStable(t *testing.T) {
-	for _, h := range []string{"quip.localhost", "api.quip.localhost", "x.localhost"} {
+	for _, h := range []string{"shop.localhost", "api.shop.localhost", "x.localhost"} {
 		a, b := Hash(h), Hash(h)
 		if a != b {
 			t.Fatalf("%s: %d != %d", h, a, b)
@@ -15,7 +15,7 @@ func TestHashStable(t *testing.T) {
 			t.Fatalf("%s: %d out of range", h, a)
 		}
 	}
-	if Hash("quip.localhost") == Hash("api.quip.localhost") {
+	if Hash("shop.localhost") == Hash("api.shop.localhost") {
 		t.Fatal("distinct hosts share a port")
 	}
 }

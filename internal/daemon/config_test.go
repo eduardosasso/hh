@@ -11,21 +11,21 @@ import (
 
 func TestProxiesOrder(t *testing.T) {
 	routes := []route.Route{
-		{Host: "overdew.localhost", Port: 1},
-		{Host: "wt-173.overdew.localhost", Port: 2},
-		{Host: "quip.localhost", Port: 3},
+		{Host: "blog.localhost", Port: 1},
+		{Host: "wt-173.blog.localhost", Port: 2},
+		{Host: "shop.localhost", Port: 3},
 	}
 	var got []string
 	for _, p := range proxies(routes) {
 		got = append(got, p["match"].([]object)[0]["host"].([]string)[0])
 	}
 	want := []string{
-		"wt-173.overdew.localhost",
-		"overdew.localhost",
-		"quip.localhost",
-		"*.wt-173.overdew.localhost",
-		"*.overdew.localhost",
-		"*.quip.localhost",
+		"wt-173.blog.localhost",
+		"blog.localhost",
+		"shop.localhost",
+		"*.wt-173.blog.localhost",
+		"*.blog.localhost",
+		"*.shop.localhost",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v\nwant %v", got, want)
@@ -50,7 +50,7 @@ func TestPathRoutes(t *testing.T) {
 }
 
 func TestConfigValid(t *testing.T) {
-	b, err := Config([]route.Route{{Host: "quip.localhost", Port: 40000}}, Settings{Storage: "/s", Log: "/l", HTTPS: 443, HTTP: 80})
+	b, err := Config([]route.Route{{Host: "shop.localhost", Port: 40000}}, Settings{Storage: "/s", Log: "/l", HTTPS: 443, HTTP: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestConfigValid(t *testing.T) {
 }
 
 func TestAccessLog(t *testing.T) {
-	b, err := Config([]route.Route{{Host: "quip.localhost", Port: 40000}}, Settings{Storage: "/s", Log: "/l", Access: "/a.log", HTTPS: 443, HTTP: 80})
+	b, err := Config([]route.Route{{Host: "shop.localhost", Port: 40000}}, Settings{Storage: "/s", Log: "/l", Access: "/a.log", HTTPS: 443, HTTP: 80})
 	if err != nil {
 		t.Fatal(err)
 	}

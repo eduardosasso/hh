@@ -13,8 +13,8 @@ import (
 const user = "/Users/me"
 
 var routes = []route.Route{
-	{Host: "overdew.localhost", PID: 100, Cwd: user + "/moonshot/overdew"},
-	{Host: "quip.localhost", PID: 200, Cwd: user + "/code/quip"},
+	{Host: "blog.localhost", PID: 100, Cwd: user + "/code/blog"},
+	{Host: "shop.localhost", PID: 200, Cwd: user + "/code/shop"},
 }
 
 func tree(pid int) ([]int, error) {
@@ -29,8 +29,8 @@ func TestBusyOwned(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := []listen.Socket{{Port: 3000, PID: 4242, Command: "bun"}}
-	got := busy("quip.localhost", 3000, 47433, holder(held, own, noCwd, user))
-	want := "hh: quip.localhost usually listens on 3000, but 3000 is held by bun (pid 4242) running overdew.localhost from ~/moonshot/overdew\n" +
+	got := busy("shop.localhost", 3000, 47433, holder(held, own, noCwd, user))
+	want := "hh: shop.localhost usually listens on 3000, but 3000 is held by bun (pid 4242) running blog.localhost from ~/code/blog\n" +
 		"hh: free port for this run: 47433. Read $PORT in your dev script to use it."
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
@@ -86,8 +86,8 @@ func fake(usual int) (*watcher, *fakeDaemon) {
 		remember: func(host string, p int) error { d.usual[host] = p; return nil },
 		forget:   func(host string) error { delete(d.usual, host); return nil },
 		out:      &d.output,
-		r:        route.Route{Host: "quip.localhost", Port: assigned},
-		url:      "https://quip.localhost",
+		r:        route.Route{Host: "shop.localhost", Port: assigned},
+		url:      "https://shop.localhost",
 		usual:    usual,
 		routed:   assigned,
 	}
@@ -103,11 +103,11 @@ func TestSeePortLater(t *testing.T) {
 	if w.found != assigned || !slices.Equal(d.moves, []int{internal, assigned}) {
 		t.Fatalf("found %d, moves %v", w.found, d.moves)
 	}
-	if _, ok := d.usual["quip.localhost"]; ok {
+	if _, ok := d.usual["shop.localhost"]; ok {
 		t.Fatalf("usual port kept: %v", d.usual)
 	}
-	want := "→ https://quip.localhost (app listens on 54141, ignoring PORT=47433)\n" +
-		"→ https://quip.localhost (app now listens on PORT=47433)\n"
+	want := "→ https://shop.localhost (app listens on 54141, ignoring PORT=47433)\n" +
+		"→ https://shop.localhost (app now listens on PORT=47433)\n"
 	if got := d.output.String(); got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
@@ -129,7 +129,7 @@ func TestSeeUsual(t *testing.T) {
 	if w.found != usualAt || !slices.Equal(d.moves, []int{internal, usualAt}) {
 		t.Fatalf("found %d, moves %v", w.found, d.moves)
 	}
-	if d.usual["quip.localhost"] != usualAt {
+	if d.usual["shop.localhost"] != usualAt {
 		t.Fatalf("usual %v", d.usual)
 	}
 }
@@ -176,8 +176,8 @@ func TestChoose(t *testing.T) {
 }
 
 func TestMovedLine(t *testing.T) {
-	got := movedLine("https://quip.localhost", 8787, assigned)
-	if want := "→ https://quip.localhost (app listens on 8787, ignoring PORT=47433)"; got != want {
+	got := movedLine("https://shop.localhost", 8787, assigned)
+	if want := "→ https://shop.localhost (app listens on 8787, ignoring PORT=47433)"; got != want {
 		t.Fatalf("got %q", got)
 	}
 }
