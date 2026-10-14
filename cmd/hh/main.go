@@ -18,6 +18,7 @@ Usage:
   hh open                        open the URL in the browser
   hh init                        bake the hh prefix into this project's dev script
   hh setup [--agents|--no-agents] one-time machine setup; --agents adds the rule to ~/AGENTS.md, --no-agents skips it
+  hh trust                       trust the root certificate, including Firefox
   hh daemon                      run the proxy in the foreground
   hh logs                        tail daemon logs
   hh tail [name] [--all] [--json] [-n N]  stream requests for this app
@@ -43,6 +44,7 @@ var commands = map[string]func([]string) error{
 	"open":   openCmd,
 	"init":   initCmd,
 	"setup":  setupCmd,
+	"trust":  trustCmd,
 	"daemon": daemonCmd,
 	"logs":   logsCmd,
 	"tail":   tailCmd,
