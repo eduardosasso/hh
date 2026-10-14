@@ -12,6 +12,7 @@ const (
 	dirName     = ".hh"
 	socketName  = "hh.sock"
 	stateName   = "routes.json"
+	portsName   = "ports.json"
 	logName     = "daemon.log"
 	storageName = "caddy"
 	defaultHTTP = 80
@@ -50,6 +51,9 @@ func Socket() (string, error) { return join(socketName) }
 
 // State is the persisted route table.
 func State() (string, error) { return join(stateName) }
+
+// Ports is the usual port per host, written by the wrapper.
+func Ports() (string, error) { return join(portsName) }
 
 // Log is the daemon log file.
 func Log() (string, error) { return join(logName) }
