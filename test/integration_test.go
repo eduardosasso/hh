@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -76,7 +77,8 @@ func boot(t *testing.T) (bin string, env []string, h string, https int) {
 	t.Cleanup(func() { os.RemoveAll(h) })
 	bin = build(t, h)
 	https, http80 := free(t), free(t)
-	env = append(os.Environ(), "HOME="+h,
+	// A PORT from the shell running the tests would pin every app to one port.
+	env = append(slices.DeleteFunc(os.Environ(), func(v string) bool { return strings.HasPrefix(v, "PORT=") }), "HOME="+h,
 		fmt.Sprintf("HH_HTTPS_PORT=%d", https), fmt.Sprintf("HH_HTTP_PORT=%d", http80))
 
 	daemon := exec.Command(bin, "daemon")
@@ -261,9 +263,16 @@ func launch(t *testing.T, bin string, env []string, dir string, args ...string) 
 }
 
 // expect waits for a stdout line containing want.
-func expect(t *testing.T, lines <-chan string, want string) {
+func expect(t *testing.T, lines <-chan string, want string) string {
 	t.Helper()
-	timer := time.After(deadline)
+
+	return expectWithin(t, lines, want, deadline)
+}
+
+// expectWithin waits up to wait for a stdout line containing want and returns it.
+func expectWithin(t *testing.T, lines <-chan string, want string, wait time.Duration) string {
+	t.Helper()
+	timer := time.After(wait)
 	for {
 		select {
 		case l, ok := <-lines:
@@ -276,10 +285,10 @@ func expect(t *testing.T, lines <-chan string, want string) {
 					}
 				}()
 
-				return
+				return l
 			}
 		case <-timer:
-			t.Fatalf("no line with %q after %s", want, deadline)
+			t.Fatalf("no line with %q after %s", want, wait)
 		}
 	}
 }
@@ -368,5 +377,72 @@ time.sleep(1)`, pidFile)
 	}
 	if !strings.Contains(stderr.String(), "stopped 1 leftover process (sleep)") {
 		t.Fatalf("stderr:\n%s", stderr.String())
+	}
+}
+
+const (
+	// internalPort is a helper port the dev script opens before the app.
+	internalPort = 38200
+	// pinned is a PORT the caller sets on purpose.
+	pinned = 38300
+	// settled is how soon the route must reach PORT once the app listens.
+	settled = 5 * time.Second
+)
+
+// pages writes an index.html with body into a new folder under dir.
+func pages(t *testing.T, dir, body string) string {
+	t.Helper()
+	p := filepath.Join(dir, body)
+	if err := os.Mkdir(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p, "index.html"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return p
+}
+
+func TestDiscoverLaterPort(t *testing.T) {
+	bin, env, h, https := boot(t)
+	first, second := pages(t, h, "first-server"), pages(t, h, "second-server")
+	script := filepath.Join(h, "dev.sh")
+	body := fmt.Sprintf(`#!/bin/sh
+python3 -m http.server %d --directory %q &
+sleep 2
+exec python3 -m http.server "$PORT" --directory %q
+`, internalPort, first, second)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, lines := launch(t, bin, env, h, "--name", "later", script)
+	expect(t, lines, fmt.Sprintf("(app listens on %d, ignoring PORT=", internalPort))
+	line := expectWithin(t, lines, "(app now listens on PORT=", settled)
+	if !strings.HasPrefix(line, "→ https://later.localhost") {
+		t.Fatalf("line %q", line)
+	}
+	got := fetch(t, trusted(t, h), fmt.Sprintf("https://later.localhost:%d/", https), http.StatusOK)
+	if !strings.Contains(got, "second-server") {
+		t.Fatalf("body %q", got)
+	}
+}
+
+func TestEnvPort(t *testing.T) {
+	bin, env, h, https := boot(t)
+	site := pages(t, h, "pinned-server")
+	env = append(env, fmt.Sprintf("PORT=%d", pinned))
+
+	_, lines := launch(t, bin, env, site, "--name", "pinned", "sh", "-c", `exec python3 -m http.server "$PORT"`)
+	expect(t, lines, "→ https://pinned.localhost")
+	got := fetch(t, trusted(t, h), fmt.Sprintf("https://pinned.localhost:%d/", https), http.StatusOK)
+	if !strings.Contains(got, "pinned-server") {
+		t.Fatalf("body %q", got)
+	}
+	ls := exec.Command(bin, "ls")
+	ls.Env = env
+	out, err := ls.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), strconv.Itoa(pinned)) {
+		t.Fatalf("hh ls: %v\n%s", err, out)
 	}
 }

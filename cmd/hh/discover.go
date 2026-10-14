@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -25,17 +26,40 @@ const (
 	exitedHint = "hh: the app exited before it listened. Run hh who to see which ports are in use."
 )
 
-// watcher finds the port the app listens on, moves the route there, and
+// watcher follows the port the app listens on, moves the route there, and
 // keeps the child's process tree for the orphan sweep.
 type watcher struct {
-	c      *client.Client
-	r      route.Route
-	url    string
-	found  int
+	register func(route.Route) error
+	remember func(host string, port int) error
+	forget   func(host string) error
+	out      io.Writer
+	r        route.Route
+	url      string
+	// usual is the host's usual port from ports.json, or 0.
+	usual int
+	// routed is the port the daemon sends the host to.
+	routed int
+	// found is the chosen listening port, or 0 before the app listens.
+	found int
+	// seen lists every port the tree listened on, in order of first sight.
+	seen   []int
 	family []listen.Process
 }
 
-// watch polls the child's process tree until done closes.
+func newWatcher(c *client.Client, r route.Route, url string) *watcher {
+	u, err := usual.Port(r.Host)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "hh: read usual port:", err)
+	}
+
+	return &watcher{
+		register: c.Register, remember: usual.Remember, forget: usual.Forget, out: os.Stdout,
+		r: r, url: url, usual: u, routed: r.Port,
+	}
+}
+
+// watch polls the child's process tree until done closes: fast until the app
+// listens, then slower, so a port that opens later still wins.
 func (w *watcher) watch(pid int, done <-chan struct{}) {
 	tick := time.NewTicker(pollEvery)
 	defer tick.Stop()
@@ -56,74 +80,103 @@ func (w *watcher) watch(pid int, done <-chan struct{}) {
 		if !discover {
 			continue
 		}
-		p, err := listening(pid, tree, w.r)
+		ss, err := listen.Listening(pids(pid, tree))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "hh: port discovery stopped:", err)
-		}
-		if err != nil || p != 0 {
 			discover = false
 			tick.Reset(treeEvery)
+
+			continue
 		}
-		if p != 0 {
-			w.found = p
-			w.settle(p)
+		before := w.found
+		w.see(open(ss, w.r.Paths))
+		if before == 0 && w.found != 0 {
+			tick.Reset(treeEvery)
 		}
 	}
 }
 
-func listening(pid int, tree []listen.Process, r route.Route) (int, error) {
-	pids := []int{pid}
+func pids(root int, tree []listen.Process) []int {
+	out := []int{root}
 	for _, p := range tree {
-		pids = append(pids, p.PID)
-	}
-	ss, err := listen.Listening(pids)
-	if err != nil {
-		return 0, err
+		out = append(out, p.PID)
 	}
 
-	return pick(ss, r), nil
+	return out
 }
 
-// pick prefers PORT, skips --route ports, then takes the lowest port.
-func pick(ss []listen.Socket, r route.Route) int {
+// open lists the listening ports, lowest first, without --route ports.
+func open(ss []listen.Socket, paths []route.Path) []int {
 	var ps []int
 	for _, s := range ss {
-		if s.Port == r.Port {
-			return r.Port
-		}
-		if !slices.ContainsFunc(r.Paths, func(p route.Path) bool { return p.Port == s.Port }) {
+		routed := slices.ContainsFunc(paths, func(p route.Path) bool { return p.Port == s.Port })
+		if !routed && !slices.Contains(ps, s.Port) {
 			ps = append(ps, s.Port)
 		}
 	}
-	if len(ps) == 0 {
-		return 0
-	}
+	slices.Sort(ps)
 
-	return slices.Min(ps)
+	return ps
 }
 
-// settle moves the route when the app ignores PORT and remembers its usual port.
-func (w *watcher) settle(p int) {
-	if p == w.r.Port {
-		if err := usual.Forget(w.r.Host); err != nil {
-			fmt.Fprintln(os.Stderr, "hh:", err)
+// see takes one snapshot of listening ports and moves the route when the choice changes.
+func (w *watcher) see(ports []int) {
+	for _, p := range ports {
+		if !slices.Contains(w.seen, p) {
+			w.seen = append(w.seen, p)
 		}
-
+	}
+	p := choose(ports, w.seen, w.r.Port, w.usual, w.found)
+	if p == 0 || p == w.found {
 		return
 	}
-	moved := w.r
-	moved.Port = p
-	if err := w.c.Register(moved); err != nil {
-		fmt.Fprintf(os.Stderr, "hh: move %s to port %d: %v\n", w.r.Host, p, err)
-	} else {
-		fmt.Println(movedLine(w.url, p, w.r.Port))
+	w.found = p
+	w.settle(p)
+}
+
+// choose prefers PORT, then the usual port, then the current choice so the
+// route does not flap, then the first port seen. Only listening ports count.
+func choose(listening, seen []int, assigned, usual, current int) int {
+	for _, p := range append([]int{assigned, usual, current}, seen...) {
+		if p != 0 && slices.Contains(listening, p) {
+			return p
+		}
 	}
-	if err := usual.Remember(w.r.Host, p); err != nil {
+
+	return 0
+}
+
+// settle routes the host to p and updates its usual port.
+func (w *watcher) settle(p int) {
+	if p != w.routed {
+		moved := w.r
+		moved.Port = p
+		if err := w.register(moved); err != nil {
+			fmt.Fprintf(os.Stderr, "hh: move %s to port %d: %v\n", w.r.Host, p, err)
+		} else {
+			w.routed = p
+			fmt.Fprintln(w.out, movedLine(w.url, p, w.r.Port))
+		}
+	}
+	if err := w.keep(p); err != nil {
 		fmt.Fprintln(os.Stderr, "hh:", err)
 	}
 }
 
+// keep remembers p as the usual port, or forgets it once the app listens on PORT.
+func (w *watcher) keep(p int) error {
+	if p == w.r.Port {
+		return w.forget(w.r.Host)
+	}
+
+	return w.remember(w.r.Host, p)
+}
+
 func movedLine(url string, found, assigned int) string {
+	if found == assigned {
+		return fmt.Sprintf("→ %s (app now listens on PORT=%d)", url, assigned)
+	}
+
 	return fmt.Sprintf("→ %s (app listens on %d, ignoring PORT=%d)", url, found, assigned)
 }
 

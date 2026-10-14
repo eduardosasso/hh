@@ -30,6 +30,11 @@ const (
 	signalBase    = 128
 )
 
+const (
+	portEnv = "PORT"
+	maxPort = 65535
+)
+
 type options struct {
 	name  string
 	port  int
@@ -50,7 +55,8 @@ func parse(args []string) (options, error) {
 
 		return err
 	})
-	if err := fs.Parse(args); err != nil {
+	err := fs.Parse(args)
+	if err != nil {
 		return o, &exitError{code: 2}
 	}
 	rest := fs.Args()
@@ -61,8 +67,24 @@ func parse(args []string) (options, error) {
 		return o, errors.New("no command given; see `hh help`")
 	}
 	o.cmd = rest
+	if o.port == 0 {
+		o.port, err = inherited(os.LookupEnv(portEnv))
+	}
 
-	return o, nil
+	return o, err
+}
+
+// inherited reads a PORT the caller set on purpose. It counts as --port.
+func inherited(v string, ok bool) (int, error) {
+	if !ok || v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > maxPort {
+		return 0, fmt.Errorf("%s=%q is not a port (1-%d); unset it or pass --port", portEnv, v, maxPort)
+	}
+
+	return n, nil
 }
 
 func pathRoute(v string) (route.Path, error) {
@@ -111,7 +133,7 @@ func wrap(args []string) error {
 	warnTrust()
 	warnUsual(c, r)
 
-	w := &watcher{c: c, r: r, url: u}
+	w := newWatcher(c, r, u)
 	start := time.Now()
 	code, err := spawn(bin, o.cmd, r.Port, env(r, u), w.watch)
 	reap(w.family)
@@ -191,7 +213,7 @@ func warnTrust() {
 func env(r route.Route, u string) []string {
 	p := strconv.Itoa(r.Port)
 
-	return append(os.Environ(), "PORT="+p, "HH_PORT="+p, "HH_URL="+u, "HH_HOST="+r.Host)
+	return append(os.Environ(), portEnv+"="+p, "HH_PORT="+p, "HH_URL="+u, "HH_HOST="+r.Host)
 }
 
 // spawn runs the command with inherited stdio and forwards signals to it.

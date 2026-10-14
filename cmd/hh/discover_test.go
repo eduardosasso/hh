@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/eduardosasso/hh/internal/listen"
@@ -57,26 +59,124 @@ func TestOwnersError(t *testing.T) {
 	}
 }
 
-func TestPick(t *testing.T) {
-	r := route.Route{Port: 47433, Paths: []route.Path{{Path: "/hmr", Port: 24678}}}
+func TestOpen(t *testing.T) {
+	paths := []route.Path{{Path: "/hmr", Port: 24678}}
+	ss := []listen.Socket{{Port: 9229, PID: 1}, {Port: 24678, PID: 1}, {Port: 8787, PID: 1}, {Port: 8787, PID: 2}}
+	if got := open(ss, paths); !slices.Equal(got, []int{8787, 9229}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+const (
+	assigned = 47433
+	internal = 54141
+	usualAt  = 3000
+)
+
+type fakeDaemon struct {
+	moves  []int
+	usual  map[string]int
+	output strings.Builder
+}
+
+func fake(usual int) (*watcher, *fakeDaemon) {
+	d := &fakeDaemon{usual: map[string]int{}}
+	w := &watcher{
+		register: func(r route.Route) error { d.moves = append(d.moves, r.Port); return nil },
+		remember: func(host string, p int) error { d.usual[host] = p; return nil },
+		forget:   func(host string) error { delete(d.usual, host); return nil },
+		out:      &d.output,
+		r:        route.Route{Host: "quip.localhost", Port: assigned},
+		url:      "https://quip.localhost",
+		usual:    usual,
+		routed:   assigned,
+	}
+
+	return w, d
+}
+
+func TestSeePortLater(t *testing.T) {
+	w, d := fake(0)
+	for _, snap := range [][]int{nil, {internal}, {internal}, {internal, assigned}, {internal, assigned}} {
+		w.see(snap)
+	}
+	if w.found != assigned || !slices.Equal(d.moves, []int{internal, assigned}) {
+		t.Fatalf("found %d, moves %v", w.found, d.moves)
+	}
+	if _, ok := d.usual["quip.localhost"]; ok {
+		t.Fatalf("usual port kept: %v", d.usual)
+	}
+	want := "→ https://quip.localhost (app listens on 54141, ignoring PORT=47433)\n" +
+		"→ https://quip.localhost (app now listens on PORT=47433)\n"
+	if got := d.output.String(); got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestSeePortFirst(t *testing.T) {
+	w, d := fake(0)
+	w.see([]int{assigned})
+	w.see([]int{internal, assigned})
+	if w.found != assigned || len(d.moves) != 0 || d.output.Len() != 0 {
+		t.Fatalf("found %d, moves %v, output %q", w.found, d.moves, d.output.String())
+	}
+}
+
+func TestSeeUsual(t *testing.T) {
+	w, d := fake(usualAt)
+	w.see([]int{internal})
+	w.see([]int{usualAt, internal})
+	if w.found != usualAt || !slices.Equal(d.moves, []int{internal, usualAt}) {
+		t.Fatalf("found %d, moves %v", w.found, d.moves)
+	}
+	if d.usual["quip.localhost"] != usualAt {
+		t.Fatalf("usual %v", d.usual)
+	}
+}
+
+func TestSeeStable(t *testing.T) {
+	w, d := fake(0)
+	w.see([]int{9000})
+	w.see([]int{8000, 9000})
+	if w.found != 9000 || !slices.Equal(d.moves, []int{9000}) {
+		t.Fatalf("found %d, moves %v", w.found, d.moves)
+	}
+}
+
+func TestSeeClosed(t *testing.T) {
+	w, d := fake(0)
+	w.see([]int{9000})
+	w.see([]int{8000, 9000})
+	w.see([]int{8000})
+	if w.found != 8000 || !slices.Equal(d.moves, []int{9000, 8000}) {
+		t.Fatalf("found %d, moves %v", w.found, d.moves)
+	}
+	w.see(nil)
+	if w.found != 8000 || len(d.moves) != 2 {
+		t.Fatalf("moved with nothing listening: found %d, moves %v", w.found, d.moves)
+	}
+}
+
+func TestChoose(t *testing.T) {
 	cases := []struct {
-		ss   []listen.Socket
-		want int
+		listening, seen      []int
+		usual, current, want int
 	}{
-		{nil, 0},
-		{[]listen.Socket{{Port: 9229}, {Port: 47433}}, 47433},
-		{[]listen.Socket{{Port: 24678}}, 0},
-		{[]listen.Socket{{Port: 24678}, {Port: 9229}, {Port: 8787}}, 8787},
+		{nil, nil, 0, 0, 0},
+		{[]int{9229, assigned}, []int{9229, assigned}, 0, 9229, assigned},
+		{[]int{9229, usualAt}, []int{9229, usualAt}, usualAt, 9229, usualAt},
+		{[]int{8000, 9000}, []int{9000, 8000}, 0, 0, 9000},
+		{[]int{8000}, []int{9000, 8000}, usualAt, 9000, 8000},
 	}
 	for _, c := range cases {
-		if got := pick(c.ss, r); got != c.want {
-			t.Errorf("pick(%v) = %d, want %d", c.ss, got, c.want)
+		if got := choose(c.listening, c.seen, assigned, c.usual, c.current); got != c.want {
+			t.Errorf("choose(%v, %v, usual %d, current %d) = %d, want %d", c.listening, c.seen, c.usual, c.current, got, c.want)
 		}
 	}
 }
 
 func TestMovedLine(t *testing.T) {
-	got := movedLine("https://quip.localhost", 8787, 47433)
+	got := movedLine("https://quip.localhost", 8787, assigned)
 	if want := "→ https://quip.localhost (app listens on 8787, ignoring PORT=47433)"; got != want {
 		t.Fatalf("got %q", got)
 	}
