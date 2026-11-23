@@ -26,7 +26,7 @@ go install github.com/eduardosasso/hh/cmd/hh@latest
 
 1. On Linux, lets the binary bind ports 80 and 443 (`setcap`).
 2. Installs the proxy daemon as a login service (launchd on macOS, systemd user unit on Linux).
-3. Trusts the local root certificate in the OS trust store, and tells Firefox to use it.
+3. Trusts the local root certificate in the OS trust store, tells Firefox to use it, and adds it to booted iOS Simulators.
 4. Offers to add one line to `~/AGENTS.md` so every agent starts dev servers with `hh`.
    Use `--agents` to say yes without a prompt, or `--no-agents` to skip it.
 
@@ -36,6 +36,10 @@ go install github.com/eduardosasso/hh/cmd/hh@latest
 ### Firefox
 
 Firefox ignores the OS trust store. `hh setup` sets `security.enterprise_roots.enabled` in each profile's `user.js`. Restart Firefox after. If you install Firefox later, run `hh trust`.
+
+### iOS Simulator
+
+Each simulator keeps its own trust store. `hh setup` and `hh trust` add the root to every booted simulator with `xcrun simctl keychain`. If you boot another simulator later, run `hh trust`.
 
 You can skip setup. `hh` starts the daemon on demand, and the URL still works with a
 certificate warning.

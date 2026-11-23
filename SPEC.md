@@ -36,7 +36,7 @@ hh setup
 
 `hh setup` runs once per machine:
 
-1. Trusts the internal root certificate in the OS trust store. One sudo prompt. Firefox ignores that store, so this step also appends `user_pref("security.enterprise_roots.enabled", true);` to `user.js` in each Firefox profile.
+1. Trusts the internal root certificate in the OS trust store. One sudo prompt. Firefox ignores that store, so this step also appends `user_pref("security.enterprise_roots.enabled", true);` to `user.js` in each Firefox profile. On macOS it also adds the root to each booted iOS Simulator, which keeps its own store.
 2. On Linux, runs `setcap cap_net_bind_service` on the binary. Same prompt.
 3. Installs the daemon as a login service: launchd on macOS, systemd user unit on Linux.
 4. Asks to add the agent rule to `~/AGENTS.md`. See "Agents".
@@ -56,7 +56,7 @@ Step 4 is an opt-in prompt. Everything else is silent.
 | `hh open` | Open the URL in the browser. |
 | `hh init` | Bake the prefix into the project's dev script. See "Agents". |
 | `hh setup` | Machine setup. See "Install". |
-| `hh trust` | Re-run the root trust check and the Firefox step. Installs nothing else. |
+| `hh trust` | Re-run the root trust check, the Firefox step, and the simulator step. Installs nothing else. |
 | `hh daemon` | Run the proxy in the foreground. Used by the service. |
 | `hh logs` | Tail daemon logs. |
 | `hh tail [name] [--all] [--json] [-n N]` | Stream the requests the proxy handled for this app. See "Request log". |
@@ -259,6 +259,8 @@ with no setup. Nested names like `a.b.c.localhost` work. No DNS server, no resol
 | Windows | later: built-in DNS server | user can bind | later |
 
 Firefox keeps its own certificate store on every OS. `hh setup` and `hh trust` set `security.enterprise_roots.enabled` in each profile's `user.js` so it reads the OS roots. Restart Firefox after the change.
+
+The iOS Simulator keeps its own store too. On macOS, `hh setup` and `hh trust` run `xcrun simctl keychain <udid> add-root-cert` for each booted simulator. Adding the root twice is a no-op. A simulator booted later needs `hh trust`.
 
 ## Agents
 
