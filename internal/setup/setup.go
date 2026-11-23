@@ -17,6 +17,7 @@ import (
 	"github.com/eduardosasso/hh/internal/firefox"
 	"github.com/eduardosasso/hh/internal/home"
 	"github.com/eduardosasso/hh/internal/service"
+	"github.com/eduardosasso/hh/internal/simulator"
 	"github.com/eduardosasso/hh/internal/trust"
 	"github.com/eduardosasso/hh/internal/wait"
 )
@@ -68,8 +69,8 @@ func Run(out io.Writer) error {
 	return nil
 }
 
-// Trust installs the root in the OS trust store if needed, then enables it in Firefox.
-// A Firefox failure is reported but does not fail: the OS trust is done.
+// Trust installs the root in the OS trust store if needed, then enables it in Firefox
+// and booted iOS Simulators. Their failures are reported but do not fail: the OS trust is done.
 func Trust(out io.Writer) error {
 	ok, err := trust.Trusted()
 	if err != nil {
@@ -82,6 +83,13 @@ func Trust(out io.Writer) error {
 	}
 	if err := firefox.Enable(out); err != nil {
 		fmt.Fprintln(out, "firefox:", err)
+	}
+	root, err := home.RootCert()
+	if err != nil {
+		return err
+	}
+	if err := simulator.Trust(out, root); err != nil {
+		fmt.Fprintln(out, "simulator:", err)
 	}
 
 	return nil
